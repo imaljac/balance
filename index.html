@@ -361,7 +361,12 @@ async function fbInit(){
     });
   }catch(e){FB.state='error';FB.err=String(e&&e.message||e);setSync('error');render()}
 }
-const FB_ERR={'auth/invalid-credential':'Mail o contraseña incorrectos.','auth/wrong-password':'Contraseña incorrecta.','auth/user-not-found':'No existe una cuenta con ese mail.','auth/email-already-in-use':'Ya existe una cuenta con ese mail: tocá Entrar.','auth/weak-password':'La contraseña tiene que tener al menos 6 caracteres.','auth/invalid-email':'El mail no es válido.','auth/network-request-failed':'Sin conexión. Probá de nuevo.','auth/operation-not-allowed':'Falta habilitar "Correo electrónico/contraseña" en Authentication.','auth/too-many-requests':'Demasiados intentos. Esperá unos minutos.','auth/invalid-api-key':'La configuración pegada no es válida.'};
+const FB_ERR={'auth/invalid-credential':'Mail o contraseña incorrectos.','auth/wrong-password':'Contraseña incorrecta.','auth/user-not-found':'No existe una cuenta con ese mail.','auth/email-already-in-use':'Ya existe una cuenta con ese mail: tocá Entrar.','auth/weak-password':'La contraseña tiene que tener al menos 6 caracteres.','auth/invalid-email':'El mail no es válido.','auth/network-request-failed':'Sin conexión. Probá de nuevo.','auth/operation-not-allowed':'Falta habilitar "Correo electrónico/contraseña" en Authentication.','auth/too-many-requests':'Demasiados intentos. Esperá unos minutos.','auth/invalid-api-key':'La configuración pegada no es válida.','auth/popup-blocked':'El navegador bloqueó la ventana de Google. Permití ventanas emergentes o entrá con mail.','auth/operation-not-supported-in-this-environment':'Acá no se puede entrar con Google. Usá mail y contraseña.','auth/unauthorized-domain':'Falta agregar imaljac.github.io en Dominios autorizados de Firebase.','auth/account-exists-with-different-credential':'Ese mail ya tiene cuenta con contraseña: entrá con mail.'};
+async function fbGoogle(){
+  if(!FB.auth){toast('Todavía se está conectando');return}
+  try{const pr=new FB.A.GoogleAuthProvider();pr.setCustomParameters({prompt:'select_account'});await FB.A.signInWithPopup(FB.auth,pr);toast('Conectada')}
+  catch(e){if(e.code==='auth/popup-closed-by-user'||e.code==='auth/cancelled-popup-request')return;toast(FB_ERR[e.code]||('Error: '+(e.code||e.message)))}
+}
 async function fbAuth(kind){
   const em=($('#fb-em')||{}).value,pw=($('#fb-pw')||{}).value;
   if(!FB.auth){toast('Todavía se está conectando');return}
@@ -381,7 +386,9 @@ function vSync(){
     <div class="btns"><button class="btn primary" data-act="fbSaveCfg">Guardar configuración</button></div>`;
   else if(FB.state==='loading')b=`<div class="empty">Conectando con Firebase…</div>`;
   else if(FB.state==='error')b=`<div class="hint" style="margin-top:0">No pude cargar Firebase: ${esc(FB.err)}</div><div class="btns"><button class="btn" data-act="fbForget">Borrar configuración</button></div>`;
-  else if(!FB.user)b=`<div class="grid2" style="margin-top:0"><label class="f">Mail<input id="fb-em" type="email" autocomplete="username"></label><label class="f">Contraseña<input id="fb-pw" type="password" autocomplete="current-password"></label></div>
+  else if(!FB.user)b=`<button class="btn primary block" data-act="fbGoogle" style="display:flex;align-items:center;justify-content:center;gap:10px"><svg viewBox="0 0 48 48" width="18" height="18"><path fill="#fff" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/></svg>Entrar con Google</button>
+    <div class="muted" style="font-size:12.5px;text-align:center;margin:12px 0 4px">o con mail y contraseña</div>
+    <div class="grid2" style="margin-top:0"><label class="f">Mail<input id="fb-em" type="email" autocomplete="username"></label><label class="f">Contraseña<input id="fb-pw" type="password" autocomplete="current-password"></label></div>
     <div class="btns"><button class="btn" data-act="fbNew">Crear cuenta</button><button class="btn primary" data-act="fbIn">Entrar</button></div>
     <div style="margin-top:10px;display:flex;gap:16px"><button class="link" data-act="fbReset">Olvidé la contraseña</button><button class="link" data-act="fbForget" style="color:var(--ink2)">Borrar configuración</button></div>`;
   else b=`<div class="kv"><span>Conectada como</span><b style="font-weight:600">${esc(FB.user.email)}</b></div><div class="kv"><span>Estado</span><b style="font-weight:600" class="${S.sync==='cloud'?'pos':S.sync==='error'?'neg':''}">${S.sync==='cloud'?'Sincronizando':S.sync==='error'?'Con problemas':'Esperando conexión'}</b></div>
@@ -1086,7 +1093,7 @@ const ACT={
   fetchTc:()=>fetchTc(true),
   fbSaveCfg:()=>{const c=parseFbConfig(($('#fb-cfg')||{}).value||'');if(!c){toast('No encontré apiKey, projectId y appId en lo que pegaste');return}LS.set('fbConfig',c);toast('Configuración guardada');fbInit();render()},
   fbForget:()=>{if(!confirm('¿Borrar la configuración de Firebase de este dispositivo? Tus datos locales quedan.'))return;try{localStorage.removeItem('balance.fbConfig')}catch(e){}location.reload()},
-  fbIn:()=>fbAuth('in'),fbNew:()=>fbAuth('new'),fbReset:()=>fbAuth('reset'),
+  fbIn:()=>fbAuth('in'),fbGoogle:()=>fbGoogle(),fbNew:()=>fbAuth('new'),fbReset:()=>fbAuth('reset'),
   fbOut:()=>{if(FB.auth)FB.A.signOut(FB.auth)},
   skipTc:()=>{LS.set('tcSkip',today());render()},
   newCat:d=>sheetCat(null,d.v),
