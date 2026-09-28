@@ -481,7 +481,7 @@ const mDiff=(a,b)=>(+b.slice(0,4)-+a.slice(0,4))*12+(+b.slice(5,7)-+a.slice(5,7)
 function cuotasEnCurso(){
   const out=[];
   for(const m of allMovs()){
-    if(m.tipo!=='gasto'||!isCard(m.medio)||(+m.cuotas||1)<2)continue;
+    if(m.tipo!=='gasto'||!isCard(m.medio)||((+m.cuotas||1)<2&&!m.importada))continue;
     const c=cardOf(m.medio);if(!c)continue;
     const n=+m.cuotas,c0=m.c0||cierreYM(m.fecha,c),Cn=cierreYM(today(),c);
     const idx=Math.max(mDiff(c0,Cn),+m.k0||0);
@@ -605,7 +605,7 @@ function vCuotas(){
   const groups=S.cfg.tarjetas.map(c=>({c,items:cs.filter(x=>x.card.id===c.id)})).filter(g=>g.items.length);
   return `<h2>Cuotas en curso <span class="aside"><button class="link" data-act="newCuota">Agregar cuotas que ya venía pagando</button></span></h2>
   ${cs.length?`<div class="stats" style="margin-bottom:6px"><div class="stat"><small>Por mes</small><b>${money(mens)}</b></div><div class="stat"><small>Falta pagar</small><b>${money(tot)}</b></div><div class="stat"><small>Compras</small><b>${cs.length}</b></div><div class="stat"><small>Próximo alivio</small><b>${mShort(next)} ${next.slice(2,4)}</b><small>−${money(fins[next])} por mes</small></div></div>
-  ${groups.map(g=>`<div class="group-h">${esc(g.c.nombre)} <span style="font-weight:500">· ${money(sum(g.items.map(x=>x.cuota)))} por mes</span></div><div class="list">${g.items.map(x=>{const pct=Math.max(0,Math.min(100,(x.prox-1)/x.n*100));return `<button class="item" data-act="editCuota" data-id="${x.m.id}" style="flex-wrap:wrap"><i class="cdot" style="background:${catOf(x.m.cat).color}"></i><div class="grow"><div class="t">${esc(x.m.desc||catOf(x.m.cat).nombre)}</div><div class="s">${x.empieza?'Empieza '+dShort(x.empieza):'Cuota '+x.prox+' de '+x.n}${' · termina '+mShort(ymOf(x.fin))+' '+x.fin.slice(0,4)}</div></div><div class="amt">${money(x.cuota)}<div class="s" style="font-weight:400">faltan ${x.resta}</div></div><div class="bar" style="width:100%;height:5px;margin:2px 0 0 22px"><i style="width:${pct}%;background:${catOf(x.m.cat).color}"></i></div></button>`}).join('')}</div>`).join('')}`
+  ${groups.map(g=>`<div class="group-h">${esc(g.c.nombre)} <span style="font-weight:500">· ${money(sum(g.items.map(x=>x.cuota)))} por mes</span></div><div class="list">${g.items.map(x=>{const pct=Math.max(0,Math.min(100,(x.prox-1)/x.n*100));return `<button class="item" data-act="editCuota" data-id="${x.m.id}" style="flex-wrap:wrap"><i class="cdot" style="background:${catOf(x.m.cat).color}"></i><div class="grow"><div class="t">${esc(x.m.desc||catOf(x.m.cat).nombre)}</div><div class="s">${x.empieza?'Empieza '+dShort(x.empieza):x.n===1?'Pago único':'Cuota '+x.prox+' de '+x.n}${' · termina '+mShort(ymOf(x.fin))+' '+x.fin.slice(0,4)}</div></div><div class="amt">${money(x.cuota)}<div class="s" style="font-weight:400">faltan ${x.resta}</div></div><div class="bar" style="width:100%;height:5px;margin:2px 0 0 22px"><i style="width:${pct}%;background:${catOf(x.m.cat).color}"></i></div></button>`}).join('')}</div>`).join('')}`
   :`<div class="empty">Cargá las compras en cuotas que ya venías pagando: con la cuota en la que vas, te muestro cuánto falta y cuándo termina cada una. Las que cargues desde ahora con el botón naranja aparecen acá solas.</div>`}`;
 }
 function vMovs(){
@@ -947,14 +947,14 @@ function sheetCuota(init){
     x={id:init.id,ts:init.ts,fecha:init.fecha,medio:init.medio,desc:init.desc,cat:init.cat,moneda:init.moneda,tc:init.tc,n,cuota:nf2.format(init.monto/n),prox:Math.min(n,Math.max(1,mDiff(c0,Cn)+1)),k0:+init.k0||0,c0}}
   else x={medio:'tc:'+(S.cfg.tarjetas[0]||{}).id,desc:'',cat:null,moneda:'ARS',n:12,cuota:'',prox:1};
   openSheet(editing?'Editar compra en cuotas':'Cuotas que ya venía pagando',body=>{
-    const read=()=>{const g=s=>body.querySelector(s);x.desc=g('#q-d').value;x.cuota=g('#q-m').value;x.n=Math.max(2,Math.min(72,parseInt(g('#q-n').value)||2));x.prox=Math.max(1,Math.min(x.n,parseInt(g('#q-p').value)||1))};
+    const read=()=>{const g=s=>body.querySelector(s);x.desc=g('#q-d').value;x.cuota=g('#q-m').value;x.n=Math.max(1,Math.min(72,parseInt(g('#q-n').value)||1));x.prox=Math.max(1,Math.min(x.n,parseInt(g('#q-p').value)||1))};
     const draw=()=>{const c=cardOf(x.medio)||S.cfg.tarjetas[0];const Cn=c?cierreYM(today(),c):S.cur;
       const cu=parseAmt(x.cuota),fin=c?venceDate(addM(Cn,x.n-x.prox),c):'';
       body.innerHTML=`<div class="fl" style="margin-top:0">Tarjeta</div><div class="chips">${chipsH('medio',S.cfg.tarjetas.map(t=>({v:'tc:'+t.id,l:t.nombre})),x.medio)}</div>
       <label class="f" style="margin-top:14px">Qué compraste<input id="q-d" value="${esc(x.desc||'')}" placeholder="Ej: Heladera, Notebook"></label>
       <div class="fl">Monto de cada cuota</div><div class="amt-in" style="margin-top:0"><button type="button" class="cur ${x.moneda==='USD'?'usd':''}" data-k="moneda" data-v="${x.moneda==='USD'?'ARS':'USD'}">${x.moneda==='USD'?'US$':'$'}</button><input id="q-m" inputmode="decimal" value="${esc(x.cuota)}" placeholder="0"></div>
-      <div class="grid2"><label class="f">Cantidad de cuotas<input id="q-n" type="number" min="2" max="72" value="${x.n}"></label><label class="f">Cuota del próximo resumen<input id="q-p" type="number" min="1" max="${x.n}" value="${x.prox}"></label></div>
-      ${c?`<div class="hint">Próximo resumen de ${esc(c.nombre)}: cierra ${dShort(cierreDate(Cn,c))} y vence ${dShort(venceDate(Cn,c))}.${cu>0?` Te quedan <b>${x.n-x.prox+1} cuotas</b> (${money((x.n-x.prox+1)*cu,x.moneda)}) y la última vence en <b>${mName(ymOf(fin))} ${fin.slice(0,4)}</b>.`:''}</div>`:''}
+      <div class="grid2"><label class="f">Cantidad de cuotas<input id="q-n" type="number" min="1" max="72" value="${x.n}"></label><label class="f">Cuota del próximo resumen<input id="q-p" type="number" min="1" max="${x.n}" value="${x.prox}"></label></div>
+      ${c?`<div class="hint">Próximo resumen de ${esc(c.nombre)}: cierra ${dShort(cierreDate(Cn,c))} y vence ${dShort(venceDate(Cn,c))}.${cu>0?` Te ${x.n-x.prox+1===1?'queda <b>1 cuota</b>':'quedan <b>'+(x.n-x.prox+1)+' cuotas</b>'} (${money((x.n-x.prox+1)*cu,x.moneda)}) y la última vence en <b>${mName(ymOf(fin))} ${fin.slice(0,4)}</b>.`:''}</div>`:''}
       <div class="fl">Categoría</div><div class="chips">${chipsH('cat',S.cfg.cats.filter(q=>q.tipo==='gasto').map(q=>({v:q.id,l:q.nombre,dot:q.color})),x.cat)}</div>
       <div class="btns">${editing?'<button class="btn danger" data-k="del">Eliminar</button>':''}<button class="btn primary" data-k="save">Guardar</button></div>`};
     body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;read();const k=b.dataset.k;
