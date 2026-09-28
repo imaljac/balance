@@ -426,7 +426,7 @@ function cardItemsDue(M){
     if(m.tipo!=='gasto'||!isCard(m.medio))continue;
     const c=cardOf(m.medio);if(!c)continue;
     const n=Math.max(1,+m.cuotas||1),c0=v0Of(m,c);
-    for(let k=(+m.k0||0);k<n;k++)if(venceYM(addM(c0,k),c)===M)out.push({C:addM(c0,k),mov:m,k,n,card:c,monto:toARS(m)/n,cat:m.cat,desc:m.desc||catOf(m.cat).nombre});
+    for(let k=(+m.k0||0);k<n;k++)if(venceYM(addM(c0,k),c)===M)out.push({C:addM(c0,k),orig:m.moneda==='USD'?money(m.monto/n,'USD'):'',mov:m,k,n,card:c,monto:toARS(m)/n,cat:m.cat,desc:m.desc||catOf(m.cat).nombre});
   }
   for(const f of S.cfg.fijos){
     if(f.tipo!=='gasto'||!isCard(f.medio))continue;
@@ -434,7 +434,7 @@ function cardItemsDue(M){
     for(let j=-2;j<=0;j++){
       const C=addM(M,j);if(!fijoActive(f,C))continue;
       const fecha=C+'-'+pad(Math.min(+f.dia||1,dim(C)));
-      const Cf=cierreYM(fecha,c);if(Cf===M&&!out.some(o=>o.fijo===f&&o.card===c))out.push({C:Cf,fijo:f,k:0,n:1,card:c,monto:fARS(f),cat:f.cat,desc:f.nombre+' (fijo)'});
+      const Cf=cierreYM(fecha,c);if(Cf===M&&!out.some(o=>o.fijo===f&&o.card===c))out.push({C:Cf,orig:f.moneda==='USD'?money(f.monto,'USD'):'',fijo:f,k:0,n:1,card:c,monto:fARS(f),cat:f.cat,desc:f.nombre+' (fijo)'});
     }
   }
   return out;
@@ -443,6 +443,9 @@ function pendingFijos(M){
   const d=getM(M),movs=d.movs||[],omit=d.omit||{};
   return S.cfg.fijos.filter(f=>fijoActive(f,M)&&!isCard(f.medio)&&!omit[f.id]&&!movs.some(m=>m.fijoId===f.id)).map(f=>({f,monto:fARS(f)}));
 }
+function ahorroUSD(M){let s=0;for(const m of (getM(M).movs||[])){if(m.tipo!=='inversion'||m.origen==='cartera')continue;const sg=m.op==='venta'?-1:1;const p=S.cfg.cartera.find(q=>q.id===m.posId)||{};
+  const usd=m.moneda==='USD'?+m.monto:(p.tipo==='Dólares'?+m.cantidad:toARS(m)/(tcFor(m.fecha)||tc()||1));s+=sg*(usd||0)}return s}
+const metaMon=()=>S.cfg.metaMoneda==='USD'?'USD':'ARS';
 const antes=M=>!!(S.cfg.inicio&&M<S.cfg.inicio);
 function resumen(M){
   if(antes(M))return {cards:[],pend:[],ing:0,gDirect:0,gCards:0,gCardsPag:0,inv:0,pendG:0,pendI:0,gastos:0,real:0,proy:0,porPagar:0,byCat:{},consTC:0};
@@ -540,7 +543,7 @@ function vInicio(){
       <div class="stat"><small>Ingresos</small><b class="pos">${money(r.ing)}</b><small>${r.pendI?'+ '+money(r.pendI)+' por cobrar':'cobrado'}</small></div>
       <div class="stat"><small>Gastos</small><b>${money(r.gastos)}</b><small>${money(r.gCards)} de tarjetas</small></div>
       <div class="stat"><small>Por pagar</small><b class="${r.porPagar>0?'neg':''}">${money(r.porPagar)}</b><small>fijos y resúmenes</small></div>
-      <div class="stat"><small>Ahorro e inversión</small><b class="usd">${money(r.inv)}</b><small>${S.cfg.metaAhorro?'meta '+money(S.cfg.metaAhorro):'sin meta'}</small></div>
+      <div class="stat"><small>Ahorro e inversión</small><b class="usd">${money(r.inv)}</b><small>${S.cfg.metaAhorro?'meta '+money(S.cfg.metaAhorro,metaMon()):'sin meta'}</small></div>
     </div>
     <div class="muted" style="font-size:13px;margin-top:10px">Disponible hoy: <b class="num" style="color:var(--ink)">${money(r.real)}</b>${r.consTC?` · Consumiste ${money(r.consTC)} con tarjeta este mes (se paga más adelante)`:''}</div>
   </section>
@@ -571,7 +574,7 @@ function itemAgenda(it){
     <div class="day ${dstate}"><div><b>${it.dia}</b><small>${mShort(S.cur)}</small></div></div>
     <div class="grow"><div class="t">${esc(it.nombre)}</div><div class="s">${it.over?'<span class="tag over">Vencido</span> ':''}${esc(it.sub)}</div></div>
     <div class="amt ${it.tipo==='ingreso'?'pos':''}">${money(it.monto)}</div>${btn}</div>`;
-  if(it.kind==='card'&&S.open[key])h+=`<div class="sub-items">${it.items.map(i=>`<div><span>${esc(i.desc)}${i.n>1?` <span class="tag">cuota ${i.k+1}/${i.n}</span>`:''}</span><span class="num">${money(i.monto)}</span></div>`).join('')}<div style="justify-content:flex-start;gap:16px"><button class="link" data-act="editResumen" data-id="${it.card.id}" data-v="${it.C}">Cambiar cierre o vencimiento</button>${it.estado==='ok'?`<button class="link" data-act="payCard" data-id="${it.card.id}">Marcar como no pagado</button>`:''}</div></div>`;
+  if(it.kind==='card'&&S.open[key])h+=`<div class="sub-items">${it.items.map(i=>`<div><span>${esc(i.desc)}${i.orig?` <span class="tag" style="color:var(--usd)">${i.orig}</span>`:''}${i.n>1?` <span class="tag">cuota ${i.k+1}/${i.n}</span>`:''}</span><span class="num">${money(i.monto)}</span></div>`).join('')}<div style="justify-content:flex-start;gap:16px"><button class="link" data-act="editResumen" data-id="${it.card.id}" data-v="${it.C}">Cambiar cierre o vencimiento</button>${it.estado==='ok'?`<button class="link" data-act="payCard" data-id="${it.card.id}">Marcar como no pagado</button>`:''}</div></div>`;
   return h;
 }
 function vPlan(){
@@ -579,7 +582,7 @@ function vPlan(){
   const pend=ag.filter(i=>i.estado==='pend'&&i.tipo==='gasto');
   const cats=S.cfg.cats.filter(c=>c.tipo==='gasto'&&(c.presupuesto>0||r.byCat[c.id]>0));
   const presTot=sum(S.cfg.cats.filter(c=>c.tipo==='gasto').map(c=>+c.presupuesto||0));
-  const metaHecho=r.inv,meta=+S.cfg.metaAhorro||0;
+  const mm=metaMon(),metaHecho=mm==='USD'?(antes(M)?0:ahorroUSD(M)):r.inv,meta=+S.cfg.metaAhorro||0;
   return `<div class="grid two">${avisoAntes()}
   <section class="panel wide">
     <h2>Agenda de ${mName(M)} <span class="aside">${pend.length?`${pend.length} pendiente${pend.length>1?'s':''}: <b class="neg num">${money(sum(pend.map(i=>i.monto)))}</b>`:'todo al día'}</span></h2>
@@ -601,7 +604,7 @@ function vPlan(){
   </section>
   <section class="panel">
     <h2>Meta de ahorro <span class="aside"><button class="link" data-act="editMeta">${meta?'Cambiar':'Definir'}</button></span></h2>
-    ${meta?`<div class="bar-top"><span>Llevás <b class="num">${money(metaHecho)}</b></span><span class="muted num">de ${money(meta)}</span></div><div class="bar"><i style="width:${Math.max(0,Math.min(100,metaHecho/meta*100))}%;background:var(--usd)"></i></div><div class="muted" style="font-size:13px;margin-top:8px">${metaHecho>=meta?'Meta cumplida este mes.':'Te faltan '+money(meta-metaHecho)+'. Registrá compras de dólares o CEDEARs en Cartera.'}</div>`:`<div class="empty">Fijá cuánto querés separar por mes para ahorro e inversión.</div>`}
+    ${meta?`<div class="bar-top"><span>Llevás <b class="num">${money(metaHecho,mm)}</b></span><span class="muted num">de ${money(meta,mm)}</span></div><div class="bar"><i style="width:${Math.max(0,Math.min(100,metaHecho/meta*100))}%;background:var(--usd)"></i></div><div class="muted" style="font-size:13px;margin-top:8px">${metaHecho>=meta?'Meta cumplida este mes.':'Te faltan '+money(meta-metaHecho,mm)+'. Registrá compras de dólares o CEDEARs en Cartera.'}</div>`:`<div class="empty">Fijá cuánto querés separar por mes para ahorro e inversión.</div>`}
   </section>
   <section class="panel">
     <h2>Gastos e ingresos fijos <span class="aside"><button class="link" data-act="newFijo">Agregar</button></span></h2>
@@ -873,10 +876,11 @@ function sheetFijo(f){
         <div class="grid2"><label class="f">Día de vencimiento<input id="x-d" type="number" min="1" max="31" value="${x.dia}"></label><div></div></div>
         <div class="fl">Categoría</div><div class="chips">${chipsH('cat',cats.map(c=>({v:c.id,l:c.nombre,dot:c.color})),x.cat)}</div>
         <div class="fl">${x.tipo==='gasto'?'Cómo se paga':'Dónde entra'}</div><div class="chips">${chipsH('medio',medios.map(m=>({v:m.id,l:m.nombre})),x.medio)}</div>
-        ${isCard(x.medio)?`<div class="hint">Débito automático en tarjeta: se suma solo al resumen cada mes, no hace falta marcarlo.</div>`:`<div class="hint">Cada mes aparece en la agenda. Al marcarlo como ${x.tipo==='gasto'?'pagado':'cobrado'} podés ajustar el monto real.</div>`}
+        ${isCard(x.medio)?`<div class="hint">Débito automático en tarjeta: se suma solo al resumen cada mes, no hace falta marcarlo.${(()=>{const c=cardOf(x.medio);if(!c||!x.desde)return '';const f=x.desde+'-'+pad(Math.min(+x.dia||1,dim(x.desde))),V=cierreYM(f,c);return ` El primer cargo (${dShort(f)}) entra en el resumen que vence el <b>${dShort(venceDate(V,c))}</b>. Si ya aparece en un resumen anterior, poné un "Desde" más temprano.`})()}</div>`:`<div class="hint">Cada mes aparece en la agenda. Al marcarlo como ${x.tipo==='gasto'?'pagado':'cobrado'} podés ajustar el monto real.</div>`}
         <div class="grid2"><label class="f">Desde<input id="x-desde" type="month" value="${x.desde}"></label><label class="f">Hasta (opcional)<input id="x-hasta" type="month" value="${x.hasta||''}"></label></div>
         <div class="btns">${editing?'<button class="btn danger" data-k="del">Eliminar</button>':''}<button class="btn primary" data-k="save">Guardar</button></div>`;
     };
+    body.addEventListener('change',e=>{if(e.target.id==='x-desde'||e.target.id==='x-d'){read();draw()}});
     body.addEventListener('click',e=>{
       const b=e.target.closest('[data-k]');if(!b)return;read();const k=b.dataset.k,v=b.dataset.v;
       if(k==='save'){
@@ -1008,8 +1012,13 @@ function sheetCat(c,tipo){
 }
 function sheetMeta(){
   openSheet('Meta de ahorro mensual',body=>{
-    body.innerHTML=`<div class="amt-in"><span class="cur">$</span><input id="mt" inputmode="decimal" value="${S.cfg.metaAhorro?nf2.format(S.cfg.metaAhorro):''}" placeholder="0"></div><div class="hint">Se compara con lo que registres como compra de dólares o inversiones pagadas con la plata del mes.</div><div class="btns"><button class="btn primary" data-k="save">Guardar</button></div>`;
-    body.querySelector('[data-k=save]').onclick=()=>{S.cfg.metaAhorro=parseAmt(body.querySelector('#mt').value);saveCfg();closeSheet()};
+    let mon=metaMon();
+    const draw=()=>{const v=body.querySelector('#mt')?body.querySelector('#mt').value:(S.cfg.metaAhorro?nf2.format(S.cfg.metaAhorro):'');
+      body.innerHTML=`<div class="amt-in"><button type="button" class="cur ${mon==='USD'?'usd':''}" data-k="mon">${mon==='USD'?'US$':'$'}</button><input id="mt" inputmode="decimal" value="${esc(v)}" placeholder="0"></div><div class="hint">${mon==='USD'?'Se compara con los dólares que compres en el mes y con tus inversiones pasadas a dólares, cada una con la cotización de su día.':'Se compara con lo que registres como compra de dólares o inversiones pagadas con la plata del mes.'} Tocá el botón de moneda para cambiarla.</div><div class="btns"><button class="btn primary" data-k="save">Guardar</button></div>`};
+    draw();
+    body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;
+      if(b.dataset.k==='mon'){mon=mon==='USD'?'ARS':'USD';draw();return}
+      if(b.dataset.k==='save'){S.cfg.metaAhorro=parseAmt(body.querySelector('#mt').value);S.cfg.metaMoneda=mon;saveCfg();closeSheet()}});
   });
 }
 function sheetPos(p){
