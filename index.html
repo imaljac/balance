@@ -237,7 +237,7 @@ const sum=a=>a.reduce((s,x)=>s+(+x||0),0);
 /* ---------- datos por defecto ---------- */
 const PALETTE=['#E0662B','#3D6FB6','#4E9467','#C9A227','#8E5BA8','#2A9A9A','#C0506A','#7F8636','#5E6E80','#B07A4F','#4C8BD6','#A3486E','#6D9C3F','#9A9A92'];
 const MEDIOS=[{id:'efectivo',nombre:'Efectivo'},{id:'debito',nombre:'Débito / transf.'},{id:'billetera',nombre:'Billetera virtual'}];
-const TIPOS_POS=['Dólares','CEDEAR','Acción','Bono','FCI','Otro'];
+const TIPOS_POS=['Dólares','CEDEAR','Acción','Bono','FCI','Reserva / cuenta remunerada','Otro'];
 function defaultCfg(){
   const g=[['super','Supermercado'],['viv','Vivienda y expensas'],['serv','Servicios'],['trans','Transporte'],['salud','Salud'],['comida','Comida afuera y delivery'],['susc','Suscripciones'],['ropa','Ropa'],['edu','Educación'],['ocio','Salidas y ocio'],['casa','Casa y mantenimiento'],['hobby','Hobbies'],['imp','Impuestos y banco'],['otros','Otros gastos']];
   const i=[['sueldo','Sueldo'],['aguin','Aguinaldo'],['extra','Trabajos extra'],['iotros','Otros ingresos']];
@@ -996,15 +996,15 @@ function sheetMeta(){
 function sheetPos(p){
   const editing=!!p;const x=Object.assign({tipo:'CEDEAR',nombre:'',moneda:'ARS',precio:''},p?JSON.parse(JSON.stringify(p)):{});
   openSheet(editing?x.nombre:'Nueva posición',body=>{
-    const read=()=>{x.nombre=body.querySelector('#p-n').value;const pr=body.querySelector('#p-p');if(pr)x.precio=pr.value};
+    const read=()=>{x.nombre=body.querySelector('#p-n').value;const pr=body.querySelector('#p-p');if(pr)x.precio=pr.value;const tt=body.querySelector('#p-t');if(tt)x.total=tt.value};
     const draw=()=>{const st=editing?posStats(p):null;body.innerHTML=`
       ${st?`<div class="kv"><span>Tenencia</span><b>${nf2.format(st.cant)} ${x.tipo==='Dólares'?'US$':'u.'}</b></div><div class="kv"><span>Valor actual</span><b>${money(st.valor)}</b></div><div class="kv"><span>Aportado neto</span><b>${money(st.aporte)}</b></div>`:''}
       <div class="fl">Tipo</div><div class="chips">${chipsH('tipo',TIPOS_POS.map(t=>({v:t,l:t})),x.tipo)}</div>
       <label class="f" style="margin-top:14px">Nombre o ticker<input id="p-n" value="${esc(x.nombre)}" placeholder="Ej: SPY, AL30, KO"></label>
-      ${x.tipo!=='Dólares'?`<div class="fl">Precio actual por unidad</div><div class="amt-in" style="margin-top:0"><button type="button" class="cur ${x.moneda==='USD'?'usd':''}" data-k="moneda" data-v="${x.moneda==='USD'?'ARS':'USD'}">${x.moneda==='USD'?'US$':'$'}</button><input id="p-p" inputmode="decimal" value="${x.precio!==''?esc(nf2.format(parseAmt(x.precio)||+x.precio||0)):''}" placeholder="0"></div><div class="hint">Actualizalo cuando quieras ver el valor real de tu cartera.</div>`:''}
+      ${x.tipo!=='Dólares'?`<div class="fl">Precio actual por unidad</div><div class="amt-in" style="margin-top:0"><button type="button" class="cur ${x.moneda==='USD'?'usd':''}" data-k="moneda" data-v="${x.moneda==='USD'?'ARS':'USD'}">${x.moneda==='USD'?'US$':'$'}</button><input id="p-p" inputmode="decimal" value="${x.precio!==''?esc(nf2.format(parseAmt(x.precio)||+x.precio||0)):''}" placeholder="0"></div>${st&&st.cant>0?`<label class="f" style="margin-top:14px">O el saldo total actual (${x.moneda==='USD'?'US$':'$'})<input id="p-t" inputmode="decimal" placeholder="Ej: lo que ves hoy en la app" value="${x.total!==undefined?esc(x.total):''}"></label>`:''}<div class="hint">Actualizá el precio por unidad o, si es más fácil, el saldo total que ves hoy (por ejemplo en Mercado Pago o tu broker). Así se refleja lo que ganaste.</div>`:''}
       <div class="btns">${editing&&x.id!=='usd'?'<button class="btn danger" data-k="del">Eliminar</button>':''}<button class="btn primary" data-k="save">Guardar</button></div>`};
     body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;read();const k=b.dataset.k;
-      if(k==='save'){if(!x.nombre.trim()){toast('Poné un nombre');return}const pr=x.tipo==='Dólares'?1:(typeof x.precio==='number'?x.precio:parseAmt(x.precio));const out={id:x.id||rid(),tipo:x.tipo,nombre:x.nombre.trim(),moneda:x.tipo==='Dólares'?'USD':x.moneda,precio:pr,act:(!editing||pr!==p.precio)?today():(p.act||today())};const i=S.cfg.cartera.findIndex(q=>q.id===out.id);if(i>=0)S.cfg.cartera[i]=out;else S.cfg.cartera.push(out);saveCfg();closeSheet();toast('Posición guardada');return}
+      if(k==='save'){if(!x.nombre.trim()){toast('Poné un nombre');return}let pr=x.tipo==='Dólares'?1:(typeof x.precio==='number'?x.precio:parseAmt(x.precio));if(x.tipo!=='Dólares'&&editing&&x.total&&parseAmt(x.total)>0){const cant=posStats(p).cant;if(cant>0)pr=parseAmt(x.total)/cant}const out={id:x.id||rid(),tipo:x.tipo,nombre:x.nombre.trim(),moneda:x.tipo==='Dólares'?'USD':x.moneda,precio:pr,act:(!editing||pr!==p.precio)?today():(p.act||today())};const i=S.cfg.cartera.findIndex(q=>q.id===out.id);if(i>=0)S.cfg.cartera[i]=out;else S.cfg.cartera.push(out);saveCfg();closeSheet();toast('Posición guardada');return}
       if(k==='del'){if(posStats(p).ops.length){toast('Tiene operaciones: borralas primero');return}if(confirm('¿Eliminar posición?')){S.cfg.cartera=S.cfg.cartera.filter(q=>q.id!==x.id);saveCfg();closeSheet()}return}
       x[k]=b.dataset.v;if(k==='precio')return;draw();
     });
