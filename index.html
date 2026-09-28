@@ -502,6 +502,76 @@ function cuotasEnCurso(){
   }
   return out.sort((a,b)=>a.fin.localeCompare(b.fin));
 }
+/* ---------- transporte ---------- */
+const TRAMOS=[[20,0],[30,.2],[40,.3],[Infinity,.4]];
+const trCfg=()=>Object.assign({precios:{},porDia:2,medio:'debito',cat:'g-trans'},S.cfg.transporte||{});
+function tarifaMes(ym){const t=trCfg();const ks=Object.keys(t.precios).filter(k=>k<=ym).sort();return ks.length?+t.precios[ks[ks.length-1]]:0}
+const descViaje=n=>{for(const [l,d] of TRAMOS)if(n<=l)return d;return .4};
+const precioViaje=(n,base)=>Math.round(base*(1-descViaje(n))*100)/100;
+const costoViajes=(desde,cant,base)=>{let s=0;for(let i=1;i<=cant;i++)s+=precioViaje(desde+i,base);return s};
+const viajesDe=ym=>(getM(ym).movs||[]).filter(m=>m.viaje).sort((a,b)=>a.fecha.localeCompare(b.fecha)||(a.ts||0)-(b.ts||0));
+function recalcViajes(ym){
+  const base=tarifaMes(ym);let n=0;
+  for(const m of viajesDe(ym)){const k=+m.viaje||1,ini=n+1;m.monto=Math.round(costoViajes(n,k,base)*100)/100;n+=k;
+    const d=descViaje(n);m.desc='SUBE: '+(k>1?'viajes '+ini+' y '+n:'viaje '+ini)+(d?' (−'+Math.round(d*100)+'%)':'')}
+  return n;
+}
+function habilesRestantes(ym){const t=today(),cur=ymOf(t);if(ym<cur)return 0;const from=ym===cur?dayOf(t)+1:1;let c=0;const [y,mo]=ym.split('-').map(Number);for(let d=from;d<=dim(ym);d++){const w=new Date(y,mo-1,d).getDay();if(w>0&&w<6)c++}return c}
+function addViaje(k){
+  const t=trCfg();if(!tarifaMes(S.cur)){sheetTransporte();toast('Primero cargá la tarifa del mes');return}
+  const fecha=defFecha(),ym=ymOf(fecha),d=monthDoc(ym);
+  d.movs.push({id:rid(),ts:Date.now(),tipo:'gasto',viaje:k,monto:0,moneda:'ARS',cat:t.cat,medio:t.medio,cuotas:1,fecha});
+  const n=recalcViajes(ym);saveMonth(ym);
+  toast((k>1?'Viajes ':'Viaje ')+(n-k+1)+(k>1?' y '+n:'')+': '+money(sum(viajesDe(ym).slice(-1).map(m=>m.monto))));render();
+}
+function vTransporte(){
+  const M=S.cur;if(antes(M))return '';
+  const t=trCfg(),base=tarifaMes(M),vs=viajesDe(M),n=sum(vs.map(m=>+m.viaje||1)),gastado=sum(vs.map(m=>m.monto));
+  if(!base&&!S.cfg.transporte)return `<section class="panel"><h2>Transporte</h2><div class="empty" style="padding-top:4px">Registrá cada viaje con un toque y la app aplica sola los descuentos por cantidad de viajes del mes.</div><button class="btn block" data-act="trConfig">Configurar tarifa</button></section>`;
+  const rest=habilesRestantes(M)*(+t.porDia||2),est=gastado+costoViajes(n,rest,base),prox=precioViaje(n+1,base),d=descViaje(n+1);
+  return `<section class="panel"><h2>Transporte <span class="aside"><button class="link" data-act="trConfig">Tarifa ${base?money(base):'sin cargar'}</button></span></h2>
+    <div class="kv"><span>Viajes en ${mName(M)}</span><b>${n} · ${money(gastado)}</b></div>
+    <div class="kv"><span>Próximo viaje</span><b>${money(prox)}${d?' <span class="tag ok">−'+Math.round(d*100)+'%</span>':''}</b></div>
+    ${rest?`<div class="kv"><span class="muted">Estimado a fin de mes</span><b class="muted">${money(est)} (${n+rest} viajes)</b></div>`:''}
+    <div class="btns" style="margin-top:10px"><button class="btn" data-act="viaje" data-v="1">+1 viaje</button><button class="btn primary" data-act="viaje" data-v="2">+2 ida y vuelta</button></div></section>`;
+}
+function sheetTransporte(){
+  const t=trCfg();let medio=t.medio,porDia=+t.porDia||2;const M=S.cur;
+  openSheet('Transporte',body=>{
+    const draw=()=>{const v=body.querySelector('#tr-p')?body.querySelector('#tr-p').value:(tarifaMes(M)?nf2.format(tarifaMes(M)):'');const b=parseAmt(v);
+      body.innerHTML=`<div class="fl" style="margin-top:0">Tarifa llena desde ${mName(M)} ${M.slice(0,4)}</div>
+      <div class="amt-in" style="margin-top:0"><span class="cur">$</span><input id="tr-p" inputmode="decimal" value="${esc(v)}" placeholder="Ej: 1.817"></div>
+      ${b?`<div class="hint">Viajes 1 a 20: <b>${money(b)}</b><br>21 a 30 (−20%): <b>${money(b*.8)}</b><br>31 a 40 (−30%): <b>${money(b*.7)}</b><br>41 en adelante (−40%): <b>${money(b*.6)}</b></div>`:''}
+      <div class="grid2"><label class="f">Viajes por día hábil<input id="tr-d" type="number" min="1" max="10" value="${porDia}"></label><div></div></div>
+      <div class="fl">Cómo lo pagás</div><div class="chips">${chipsH('medio',[...MEDIOS,...S.cfg.tarjetas.map(x=>({id:'tc:'+x.id,nombre:x.nombre}))].map(x=>({v:x.id,l:x.nombre})),medio)}</div>
+      <div class="muted" style="font-size:12.5px;margin-top:10px">La tarifa vale para este mes y los siguientes hasta que la cambies. Si ya registraste viajes, se recalculan.</div>
+      <div class="btns"><button class="btn primary" data-k="save">Guardar</button></div>`};
+    draw();
+    body.addEventListener('input',e=>{if(e.target.id==='tr-p'){const p=e.target.selectionStart;porDia=Math.max(1,parseInt(body.querySelector('#tr-d').value)||2);draw();const i=body.querySelector('#tr-p');i.focus();i.setSelectionRange(p,p)}});
+    body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;porDia=Math.max(1,parseInt(body.querySelector('#tr-d').value)||2);
+      if(b.dataset.k==='medio'){medio=b.dataset.v;draw();return}
+      if(b.dataset.k==='save'){const pr=parseAmt(body.querySelector('#tr-p').value);if(!(pr>0)){toast('Ingresá la tarifa');return}
+        const nt=trCfg();nt.precios[M]=pr;nt.porDia=porDia;nt.medio=medio;S.cfg.transporte=nt;saveCfg();
+        for(const ym of Object.keys(S.months))if(ym>=M&&viajesDe(ym).length){for(const m of viajesDe(ym))m.medio=medio;recalcViajes(ym);saveMonth(ym)}
+        closeSheet();toast('Tarifa guardada')}});
+  });
+}
+function sheetViaje(mv){
+  openSheet(mv.desc||'Viaje',body=>{
+    let k=+mv.viaje||1;
+    const draw=()=>{body.innerHTML=`<div class="fl" style="margin-top:0">Cantidad</div>${segH('k',[{v:'1',l:'1 viaje'},{v:'2',l:'2 viajes'}],String(k))}
+      <label class="f" style="margin-top:14px">Fecha<input type="date" id="vj-f" value="${mv.fecha}"></label>
+      <div class="hint">El monto se recalcula solo según la cantidad de viajes del mes.</div>
+      <div class="btns"><button class="btn danger" data-k="del">Eliminar</button><button class="btn primary" data-k="save">Guardar</button></div>`};
+    draw();
+    body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;const f=body.querySelector('#vj-f').value||mv.fecha;
+      if(b.dataset.k==='k'){k=+b.dataset.v;draw();body.querySelector('#vj-f').value=f;return}
+      const oldYm=ymOf(mv.fecha);removeMov(mv.id);
+      if(b.dataset.k==='save'){const m2=Object.assign({},mv,{viaje:k,fecha:f});monthDoc(ymOf(f)).movs.push(m2)}
+      for(const ym of new Set([oldYm,ymOf(f)])){if(S.months[ym]){recalcViajes(ym);saveMonth(ym)}}
+      closeSheet();toast(b.dataset.k==='del'?'Viaje eliminado':'Viaje actualizado')});
+  });
+}
 function posStats(p){
   const ops=allMovs().filter(m=>m.tipo==='inversion'&&m.posId===p.id);
   let cant=0,aporte=0;
@@ -547,6 +617,7 @@ function vInicio(){
     </div>
     <div class="muted" style="font-size:13px;margin-top:10px">Disponible hoy: <b class="num" style="color:var(--ink)">${money(r.real)}</b>${r.consTC?` · Consumiste ${money(r.consTC)} con tarjeta este mes (se paga más adelante)`:''}</div>
   </section>
+  ${vTransporte()}
   <section class="panel">
     <h2>Próximos vencimientos <span class="aside"><button class="link" data-act="go" data-v="plan">Ver plan del mes</button></span></h2>
     ${prox.length?`<div class="list">${prox.map(itemAgenda).join('')}</div>`:`<div class="empty">${S.cfg.fijos.length?'No quedan pagos pendientes este mes.':'Todavía no cargaste gastos fijos. Agregalos en Plan para ver acá qué vence y cuándo.'}</div>`}
@@ -826,6 +897,7 @@ function sheetMov(init={}){
       let cuotaInfo='';
       if(card&&m.fecha){const V=venceYM(cierreYM(m.fecha,card),card);cuotaInfo=`${n>1?`${n} cuotas de <b>${money(amt/n,m.moneda)}</b>. `:''}Entra en el resumen que vence en <b>${mName(V)}</b>${n>1?` y la última en ${mName(addM(V,n-1))}`:''}.`}
       body.innerHTML=`
+        ${m.fijoId||editing||!S.cfg.transporte?'':`<div class="chips" style="margin-bottom:10px"><button type="button" class="chip" data-k="atajo" data-v="1">+1 viaje SUBE</button><button type="button" class="chip" data-k="atajo" data-v="2">+2 ida y vuelta</button></div>`}
         ${m.fijoId||editing?'':segH('tipo',[{v:'gasto',l:'Gasto'},{v:'ingreso',l:'Ingreso'}],m.tipo)}
         <div class="amt-in"><button type="button" class="cur ${m.moneda==='USD'?'usd':''}" data-k="moneda" data-v="${m.moneda==='USD'?'ARS':'USD'}">${m.moneda==='USD'?'US$':'$'}</button><input id="f-monto" inputmode="decimal" placeholder="0" value="${esc(m.monto)}" aria-label="Monto"></div>
         <div class="fl">Categoría</div><div class="chips">${chipsH('cat',cats.map(c=>({v:c.id,l:c.nombre,dot:c.color})),m.cat)}</div>
@@ -839,6 +911,7 @@ function sheetMov(init={}){
     body.addEventListener('click',e=>{
       const b=e.target.closest('[data-k]');if(!b)return;read();
       const k=b.dataset.k,v=b.dataset.v;
+      if(k==='atajo'){closeSheet(true);addViaje(+v);return}
       if(k==='save'){
         const amt=parseAmt(m.monto);if(!(amt>0)){toast('Ingresá un monto');body.querySelector('#f-monto').focus();return}
         const catDef=m.tipo==='gasto'?'g-otros':'i-iotros';
@@ -1103,7 +1176,8 @@ const ACT={
   prevM:()=>{S.cur=addM(S.cur,-1);render()},
   nextM:()=>{S.cur=addM(S.cur,1);render()},
   add:()=>{if(S.view==='cartera')sheetOp();else sheetMov()},
-  editMov:d=>{const f=findMov(d.id);if(f)sheetMov(f.m)},
+  editMov:d=>{const f=findMov(d.id);if(!f)return;if(f.m.viaje)sheetViaje(f.m);else sheetMov(f.m)},
+  viaje:d=>addViaje(+d.v),trConfig:()=>sheetTransporte(),
   editOp:d=>{const f=findMov(d.id);if(f)sheetOp(f.m)},
   payFijo:d=>payFijo(d.id),
   agendaFijo:d=>sheetAgendaFijo(d.id),
