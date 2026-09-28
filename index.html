@@ -438,7 +438,9 @@ function pendingFijos(M){
   const d=getM(M),movs=d.movs||[],omit=d.omit||{};
   return S.cfg.fijos.filter(f=>fijoActive(f,M)&&!isCard(f.medio)&&!omit[f.id]&&!movs.some(m=>m.fijoId===f.id)).map(f=>({f,monto:fARS(f)}));
 }
+const antes=M=>!!(S.cfg.inicio&&M<S.cfg.inicio);
 function resumen(M){
+  if(antes(M))return {cards:[],pend:[],ing:0,gDirect:0,gCards:0,gCardsPag:0,inv:0,pendG:0,pendI:0,gastos:0,real:0,proy:0,porPagar:0,byCat:{},consTC:0};
   const d=getM(M),movs=d.movs||[],pagos=d.pagos||{};
   const direct=movs.filter(m=>m.tipo==='gasto'&&!isCard(m.medio));
   const ing=movs.filter(m=>m.tipo==='ingreso');
@@ -461,6 +463,7 @@ function resumen(M){
   return r;
 }
 function agenda(M){
+  if(antes(M))return [];
   const d=getM(M),movs=d.movs||[],pagos=d.pagos||{},omit=d.omit||{},items=[];
   for(const f of S.cfg.fijos){
     if(!fijoActive(f,M)||isCard(f.medio))continue;
@@ -495,7 +498,9 @@ function posStats(p){
   const ops=allMovs().filter(m=>m.tipo==='inversion'&&m.posId===p.id);
   let cant=0,aporte=0;
   for(const o of ops){const s=o.op==='venta'?-1:1;cant+=s*(+o.cantidad||0);aporte+=s*toARS(o)}
-  const valor=cant*(+p.precio||0)*(p.moneda==='USD'?tc():1);
+  const fx=p.moneda==='USD'?(tc()||1):1;
+  const precio=+p.precio||(cant>0?aporte/cant/fx:0);
+  const valor=cant*precio*(p.moneda==='USD'?tc():1);
   return {ops,cant,aporte,valor};
 }
 function cardStatus(c){
@@ -514,13 +519,14 @@ function banners(){
   if(!S.cfg.setup)h+=`<div class="banner"><div class="grow"><b>Configurá tus tarjetas y gastos fijos</b><div class="muted">Con el día de cierre y vencimiento de cada tarjeta calculo qué pagás cada mes, incluidas las cuotas.</div></div><button class="act go" data-act="go" data-v="ajustes">Configurar</button></div>`;
   return h;
 }
+function avisoAntes(){return antes(S.cur)?`<div class="banner wide"><div class="grow"><b>Empezaste a usar Balance en ${mName(S.cfg.inicio)} ${S.cfg.inicio.slice(0,4)}</b><div class="muted">Los meses anteriores no se calculan, así no quedan incompletos.</div></div><button class="act go" data-act="irInicio">Ir a ${mName(S.cfg.inicio)}</button></div>`:''}
 function vInicio(){
   const M=S.cur,r=resumen(M),ag=agenda(M).filter(i=>i.estado==='pend');
   const t=today(),isCur=M===ymOf(t);
   const prox=(isCur?ag.filter(i=>i.over||i.dia>=dayOf(t)):ag).slice(0,5);
   const cats=Object.entries(r.byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   const total=sum(cats.map(c=>c[1]));
-  return `<div class="grid two">
+  return `<div class="grid two">${avisoAntes()}
   ${banners()?`<div class="wide grid">${banners()}</div>`:''}
   <section class="panel hero wide">
     <div class="hero-lbl">Te va a quedar a fin de ${mName(M)}</div>
@@ -569,7 +575,7 @@ function vPlan(){
   const cats=S.cfg.cats.filter(c=>c.tipo==='gasto'&&(c.presupuesto>0||r.byCat[c.id]>0));
   const presTot=sum(S.cfg.cats.filter(c=>c.tipo==='gasto').map(c=>+c.presupuesto||0));
   const metaHecho=r.inv,meta=+S.cfg.metaAhorro||0;
-  return `<div class="grid two">
+  return `<div class="grid two">${avisoAntes()}
   <section class="panel wide">
     <h2>Agenda de ${mName(M)} <span class="aside">${pend.length?`${pend.length} pendiente${pend.length>1?'s':''}: <b class="neg num">${money(sum(pend.map(i=>i.monto)))}</b>`:'todo al día'}</span></h2>
     ${ag.length?`<div class="list">${ag.map(itemAgenda).join('')}</div>`:`<div class="empty">Sin vencimientos este mes. Agregá tus gastos e ingresos fijos abajo y configurá las tarjetas en Ajustes.</div>`}
@@ -676,6 +682,11 @@ function vAjustes(){
     ${Object.keys(S.cfg.tcHist||{}).length?`<div class="list" style="margin-top:8px">${Object.entries(S.cfg.tcHist).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,5).map(([f,v])=>`<div class="kv"><span class="muted">${dShort(f)}</span><b>${money(v)}</b></div>`).join('')}</div>`:''}
   </section>
   <section class="panel">
+    <h2>Inicio del registro</h2>
+    <label class="f">Empecé a usar Balance en<input type="month" id="inicio-in" value="${S.cfg.inicio||''}"></label>
+    <div class="muted" style="font-size:12.5px;margin-top:8px">Los meses anteriores no se cuentan en saldos, agenda ni gráficos, así no aparecen desbalanceados. Las cuotas y suscripciones siguen apareciendo desde este mes en adelante.</div>
+  </section>
+  <section class="panel">
     <h2>Tarjetas de crédito <span class="aside"><button class="link" data-act="newCard">Agregar</button></span></h2>
     <div class="list">${S.cfg.tarjetas.map(c=>`<button class="item" data-act="editCard" data-id="${c.id}"><div class="grow"><div class="t">${esc(c.nombre)}${c.adicional?' <span class="tag">adicional</span>':''}</div><div class="s">Cierre día ${c.cierre} · vencimiento día ${c.vence}</div></div></button>`).join('')}</div>
     ${!S.cfg.setup?`<button class="btn block" style="margin-top:10px" data-act="setupDone">Listo, ya revisé mis tarjetas</button>`:''}
@@ -767,6 +778,7 @@ async function fetchTc(force){
   }finally{tcTrying=false;if(!$('.overlay'))render()}
 }
 function bindView(){
+  const ii=$('#inicio-in');if(ii)ii.onchange=e=>{S.cfg.inicio=e.target.value||null;saveCfg();toast(S.cfg.inicio?'Registro desde '+mName(S.cfg.inicio):'Sin fecha de inicio');render()};
   const q=$('#movq');if(q)q.oninput=e=>{S.movQ=e.target.value;const pos=e.target.selectionStart;render();const n=$('#movq');n.focus();n.setSelectionRange(pos,pos)};
   const t=$('#tc-in');if(t)t.onchange=e=>{const v=parseAmt(e.target.value);if(v>0){setTc(v,'Manual');toast('Cotización guardada')}render()};
   const tq=$('#tc-quick');if(tq)tq.onkeydown=e=>{if(e.key==='Enter')ACT.saveTc()};
@@ -1006,7 +1018,7 @@ function sheetPos(p){
     body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;read();const k=b.dataset.k;
       if(k==='save'){if(!x.nombre.trim()){toast('Poné un nombre');return}let pr=x.tipo==='Dólares'?1:(typeof x.precio==='number'?x.precio:parseAmt(x.precio));if(x.tipo!=='Dólares'&&editing&&x.total&&parseAmt(x.total)>0){const cant=posStats(p).cant;if(cant>0)pr=parseAmt(x.total)/cant}const out={id:x.id||rid(),tipo:x.tipo,nombre:x.nombre.trim(),moneda:x.tipo==='Dólares'?'USD':x.moneda,precio:pr,act:(!editing||pr!==p.precio)?today():(p.act||today())};const i=S.cfg.cartera.findIndex(q=>q.id===out.id);if(i>=0)S.cfg.cartera[i]=out;else S.cfg.cartera.push(out);saveCfg();closeSheet();toast('Posición guardada');return}
       if(k==='del'){if(posStats(p).ops.length){toast('Tiene operaciones: borralas primero');return}if(confirm('¿Eliminar posición?')){S.cfg.cartera=S.cfg.cartera.filter(q=>q.id!==x.id);saveCfg();closeSheet()}return}
-      x[k]=b.dataset.v;if(k==='precio')return;draw();
+      x[k]=b.dataset.v;if(k==='tipo'&&x.tipo==='Reserva / cuenta remunerada'&&!parseAmt(x.precio)){x.precio='1';x.moneda='ARS'}if(k==='precio')return;draw();
     });
     draw();
   });
@@ -1087,6 +1099,7 @@ const ACT={
   editCard:d=>sheetCard(S.cfg.tarjetas.find(c=>c.id===d.id)),
   editResumen:d=>sheetResumen(d.id,d.v),
   newCuota:()=>sheetCuota(),
+  irInicio:()=>{S.cur=S.cfg.inicio;render()},
   hideSync:()=>{LS.set('syncHint',true);render()},
   editCuota:d=>{const f=findMov(d.id);if(!f)return;if(f.m.importada)sheetCuota(f.m);else sheetMov(f.m)},
   saveTc:()=>{const i=$('#tc-quick');const v=parseAmt(i&&i.value);if(!(v>0)){toast('Ingresá la cotización');return}setTc(v,'Manual');toast('Dólar actualizado');render()},
@@ -1121,6 +1134,7 @@ try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',
 /* ---------- inicio ---------- */
 applyTheme();
 loadLocal();
+if(S.cfg.inicio&&S.cur<S.cfg.inicio)S.cur=S.cfg.inicio;
 setSync('local');
 render();
 if(STANDALONE){
