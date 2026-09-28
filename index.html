@@ -247,7 +247,9 @@ function defaultCfg(){
     tarjetas:[{id:'t1',nombre:'Tarjeta 1',cierre:24,vence:5,adicional:false},{id:'t2',nombre:'Tarjeta 2',cierre:27,vence:9,adicional:false},{id:'t3',nombre:'Adicional',cierre:24,vence:5,adicional:true}],
     fijos:[],cartera:[{id:'usd',tipo:'Dólares',nombre:'Dólares ahorrados',moneda:'USD',precio:1}]};
 }
-function normCfg(c){const d=defaultCfg();c=Object.assign({},d,c||{});for(const k of ['cats','tarjetas','fijos','cartera'])if(!Array.isArray(c[k]))c[k]=d[k];return c}
+function normCfg(c){const d=defaultCfg();c=Object.assign({},d,c||{});for(const k of ['cats','tarjetas','fijos','cartera'])if(!Array.isArray(c[k]))c[k]=d[k];
+  for(const t of c.tarjetas){if(t.fechas&&!t.fechasV){t.fechasV={};for(const o of Object.values(t.fechas))if(o&&o.vence)t.fechasV[ymOf(o.vence)]=o}}
+  return c}
 
 /* ---------- estado y guardado ---------- */
 const S={cfg:null,months:{},cur:ymOf(today()),view:'inicio',remote:null,sync:'local',dirty:new Set(),movFilter:'todos',movQ:'',open:{}};
@@ -406,12 +408,15 @@ const medioName=id=>{if(isCard(id)){const c=cardOf(id);return c?c.nombre:'Tarjet
 const tc=()=>+S.cfg.tc||0;
 const toARS=m=>(+m.monto||0)*(m.moneda==='USD'?(+m.tc||tc()):1);
 const fARS=f=>(+f.monto||0)*(f.moneda==='USD'?tc():1);
-const defCierre=(C,c)=>C+'-'+pad(Math.min(+c.cierre,dim(C)));
-const defVence=(C,c)=>{const V=+c.vence>+c.cierre?C:addM(C,1);return V+'-'+pad(Math.min(+c.vence,dim(V)))};
-const cierreDate=(C,c)=>(c.fechas&&c.fechas[C]&&c.fechas[C].cierre)||defCierre(C,c);
-const venceDate=(C,c)=>(c.fechas&&c.fechas[C]&&c.fechas[C].vence)||defVence(C,c);
-const cierreYM=(fecha,c)=>{const y=ymOf(fecha);for(const k of [-1,0,1,2]){const C=addM(y,k);if(fecha<=cierreDate(C,c))return C}return addM(y,1)};
-const venceYM=(C,c)=>ymOf(venceDate(C,c));
+// Cada resumen se identifica por su mes de vencimiento (V): una tarjeta tiene un solo resumen por mes.
+const defCierre=(V,c)=>{const C=+c.vence>+c.cierre?V:addM(V,-1);return C+'-'+pad(Math.min(+c.cierre,dim(C)))};
+const defVence=(V,c)=>V+'-'+pad(Math.min(+c.vence,dim(V)));
+const cierreDate=(V,c)=>(c.fechasV&&c.fechasV[V]&&c.fechasV[V].cierre)||defCierre(V,c);
+const venceDate=(V,c)=>(c.fechasV&&c.fechasV[V]&&c.fechasV[V].vence)||defVence(V,c);
+const cierreYM=(fecha,c)=>{const y=ymOf(fecha);for(let k=-1;k<=3;k++){const V=addM(y,k);if(fecha<=cierreDate(V,c))return V}return addM(y,1)};
+const venceYM=(V,c)=>V;
+const legacyV=(C,c)=>{const o=c.fechas&&c.fechas[C];return o&&o.vence?ymOf(o.vence):(+c.vence>+c.cierre?C:addM(C,1))};
+const v0Of=(m,c)=>m.v0||(m.c0?legacyV(m.c0,c):cierreYM(m.fecha,c));
 const tcFor=f=>{const h=S.cfg.tcHist||{};const ks=Object.keys(h).filter(k=>k<=f).sort();return ks.length?+h[ks[ks.length-1]]:tc()};
 const fijoActive=(f,M)=>(!f.desde||f.desde<=M)&&(!f.hasta||M<=f.hasta);
 
@@ -420,7 +425,7 @@ function cardItemsDue(M){
   for(const m of allMovs()){
     if(m.tipo!=='gasto'||!isCard(m.medio))continue;
     const c=cardOf(m.medio);if(!c)continue;
-    const n=Math.max(1,+m.cuotas||1),c0=m.c0||cierreYM(m.fecha,c);
+    const n=Math.max(1,+m.cuotas||1),c0=v0Of(m,c);
     for(let k=(+m.k0||0);k<n;k++)if(venceYM(addM(c0,k),c)===M)out.push({C:addM(c0,k),mov:m,k,n,card:c,monto:toARS(m)/n,cat:m.cat,desc:m.desc||catOf(m.cat).nombre});
   }
   for(const f of S.cfg.fijos){
@@ -429,7 +434,7 @@ function cardItemsDue(M){
     for(let j=-2;j<=0;j++){
       const C=addM(M,j);if(!fijoActive(f,C))continue;
       const fecha=C+'-'+pad(Math.min(+f.dia||1,dim(C)));
-      const Cf=cierreYM(fecha,c);if(venceYM(Cf,c)===M)out.push({C:Cf,fijo:f,k:0,n:1,card:c,monto:fARS(f),cat:f.cat,desc:f.nombre+' (fijo)'});
+      const Cf=cierreYM(fecha,c);if(Cf===M&&!out.some(o=>o.fijo===f&&o.card===c))out.push({C:Cf,fijo:f,k:0,n:1,card:c,monto:fARS(f),cat:f.cat,desc:f.nombre+' (fijo)'});
     }
   }
   return out;
@@ -474,7 +479,7 @@ function agenda(M){
   for(const i of cardItemsDue(M))(byCard[i.card.id]=byCard[i.card.id]||{card:i.card,items:[]}).items.push(i);
   for(const {card,items:its} of Object.values(byCard)){
     const C=its[0].C;
-    items.push({kind:'card',card,C,items:its,dia:dayOf(venceDate(C,card)),nombre:'Resumen '+card.nombre,monto:sum(its.map(i=>i.monto)),estado:pagos[card.id]?'ok':'pend',sub:'Cerró el '+dShort(cierreDate(C,card))+(card.fechas&&card.fechas[C]?'':' (fecha habitual)'),tipo:'gasto'});
+    items.push({kind:'card',card,C,items:its,dia:dayOf(venceDate(C,card)),nombre:'Resumen '+card.nombre,monto:sum(its.map(i=>i.monto)),estado:pagos[card.id]?'ok':'pend',sub:'Cerró el '+dShort(cierreDate(C,card))+(card.fechasV&&card.fechasV[C]?'':' (fecha habitual)'),tipo:'gasto'});
   }
   const t=today(),isCur=M===ymOf(t);
   for(const it of items)it.over=it.estado==='pend'&&(M<ymOf(t)||(isCur&&it.dia<dayOf(t)));
@@ -486,7 +491,7 @@ function cuotasEnCurso(){
   for(const m of allMovs()){
     if(m.tipo!=='gasto'||!isCard(m.medio)||((+m.cuotas||1)<2&&!m.importada))continue;
     const c=cardOf(m.medio);if(!c)continue;
-    const n=+m.cuotas,c0=m.c0||cierreYM(m.fecha,c),Cn=cierreYM(today(),c);
+    const n=+m.cuotas,c0=v0Of(m,c),Cn=cierreYM(today(),c);
     const idx=Math.max(mDiff(c0,Cn),+m.k0||0);
     if(idx>=n)continue;
     const cuota=toARS(m)/n,resta=n-idx;
@@ -506,7 +511,7 @@ function posStats(p){
 function cardStatus(c){
   const t=today(),C=cierreYM(t,c),V=venceYM(C,c);
   const items=cardItemsDue(V).filter(i=>i.card.id===c.id&&i.C===C);
-  return {total:sum(items.map(i=>i.monto)),cierre:cierreDate(C,c),vence:venceDate(C,c),C,conf:!!(c.fechas&&c.fechas[C])};
+  return {total:sum(items.map(i=>i.monto)),cierre:cierreDate(C,c),vence:venceDate(C,c),C,conf:!!(c.fechasV&&c.fechasV[C])};
 }
 
 /* ---------- vistas ---------- */
@@ -917,12 +922,12 @@ function sheetCard(c){
       <div class="grid2"><label class="f">Día de cierre<input id="c-c" type="number" min="1" max="31" value="${x.cierre}"></label><label class="f">Día de vencimiento<input id="c-v" type="number" min="1" max="31" value="${x.vence}"></label></div>
       <label class="f" style="margin-top:14px;display:flex;align-items:center;gap:10px"><input type="checkbox" id="c-a" ${x.adicional?'checked':''} style="width:auto;margin:0"> Es una extensión o adicional</label>
       <div class="hint">Estos son los días habituales. Abajo podés cargar las fechas reales de cada resumen.</div>
-      ${editing?`<div class="fl">Fechas por resumen</div><div class="list">${[-1,0,1,2].map(k=>{const C=addM(cierreYM(today(),x),k),has=x.fechas&&x.fechas[C];return `<button type="button" class="item" data-k="res" data-v="${C}"><div class="grow"><div class="t">${mName(C)[0].toUpperCase()+mName(C).slice(1)}</div><div class="s">Cierre ${dShort(cierreDate(C,x))}, vence ${dShort(venceDate(C,x))}</div></div>${has?'<span class="tag ok">cargado</span>':'<span class="tag">habitual</span>'}</button>`}).join('')}</div>`:''}
+      ${editing?`<div class="fl">Fechas por resumen</div><div class="list">${[-1,0,1,2].map(k=>{const C=addM(cierreYM(today(),x),k),has=x.fechasV&&x.fechasV[C];return `<button type="button" class="item" data-k="res" data-v="${C}"><div class="grow"><div class="t">${mName(C)[0].toUpperCase()+mName(C).slice(1)}</div><div class="s">Cierre ${dShort(cierreDate(C,x))}, vence ${dShort(venceDate(C,x))}</div></div>${has?'<span class="tag ok">cargado</span>':'<span class="tag">habitual</span>'}</button>`}).join('')}</div>`:''}
       <div class="btns">${editing?'<button class="btn danger" data-k="del">Eliminar</button>':''}<button class="btn primary" data-k="save">Guardar</button></div>`;
     body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;
       if(b.dataset.k==='res'){closeSheet(true);sheetResumen(x.id,b.dataset.v);return}
       if(b.dataset.k==='save'){const n=body.querySelector('#c-n').value.trim();if(!n){toast('Poné un nombre');return}
-        const out={id:x.id||'t'+rid(),nombre:n,cierre:Math.max(1,Math.min(31,parseInt(body.querySelector('#c-c').value)||25)),vence:Math.max(1,Math.min(31,parseInt(body.querySelector('#c-v').value)||5)),adicional:body.querySelector('#c-a').checked,fechas:x.fechas||{}};
+        const out={id:x.id||'t'+rid(),nombre:n,cierre:Math.max(1,Math.min(31,parseInt(body.querySelector('#c-c').value)||25)),vence:Math.max(1,Math.min(31,parseInt(body.querySelector('#c-v').value)||5)),adicional:body.querySelector('#c-a').checked,fechasV:x.fechasV||{},fechas:x.fechas||{}};
         const i=S.cfg.tarjetas.findIndex(q=>q.id===out.id);if(i>=0)S.cfg.tarjetas[i]=out;else S.cfg.tarjetas.push(out);saveCfg();closeSheet();toast('Tarjeta guardada')}
       if(b.dataset.k==='del'){const used=allMovs().some(m=>m.medio==='tc:'+x.id);if(confirm(used?'Esta tarjeta tiene consumos cargados. Si la eliminás, dejan de sumarse a los resúmenes. ¿Eliminar igual?':'¿Eliminar esta tarjeta?')){S.cfg.tarjetas=S.cfg.tarjetas.filter(q=>q.id!==x.id);saveCfg();closeSheet()}}
     });
@@ -931,8 +936,8 @@ function sheetCard(c){
 function sheetResumen(cardId,C){
   const c=S.cfg.tarjetas.find(q=>q.id===cardId);if(!c)return;
   const draw=(body)=>{
-    const has=!!(c.fechas&&c.fechas[C]);
-    body.innerHTML=`<div class="muted" style="font-size:13.5px">Resumen que cierra en ${mName(C)} ${C.slice(0,4)}</div>
+    const has=!!(c.fechasV&&c.fechasV[C]);
+    body.innerHTML=`<div class="muted" style="font-size:13.5px">Resumen que vence en ${mName(C)} ${C.slice(0,4)}</div>
       <div class="grid2"><label class="f">Cierre<input type="date" id="r-c" value="${cierreDate(C,c)}"></label><label class="f">Vencimiento<input type="date" id="r-v" value="${venceDate(C,c)}"></label></div>
       <div class="hint">${has?'Fechas cargadas para este mes.':'Estas son las fechas habituales (día '+c.cierre+' y día '+c.vence+'). Cambialas si el resumen de este mes dice otra cosa.'} Las compras hasta el día de cierre inclusive entran en este resumen.</div>
       <div class="btns" style="flex-wrap:wrap">${has?'<button class="btn" data-k="reset">Usar fecha habitual</button>':''}<button class="btn" data-k="prev">‹ Mes anterior</button><button class="btn" data-k="next">Mes siguiente ›</button></div>
@@ -942,12 +947,14 @@ function sheetResumen(cardId,C){
     draw(body);
     body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;const k=b.dataset.k;
       if(k==='prev'||k==='next'){C=addM(C,k==='prev'?-1:1);draw(body);return}
-      c.fechas=c.fechas||{};
-      if(k==='reset'){delete c.fechas[C];saveCfg();toast('Vuelve a la fecha habitual');draw(body);return}
+      c.fechasV=c.fechasV||{};
+      if(k==='reset'){delete c.fechasV[C];saveCfg();toast('Vuelve a la fecha habitual');draw(body);return}
       if(k==='save'){const ci=body.querySelector('#r-c').value,ve=body.querySelector('#r-v').value;
         if(!ci||!ve){toast('Completá las dos fechas');return}
         if(ve<=ci){toast('El vencimiento tiene que ser posterior al cierre');return}
-        if(ci===defCierre(C,c)&&ve===defVence(C,c))delete c.fechas[C];else c.fechas[C]={cierre:ci,vence:ve};
+        if(ymOf(ve)!==C){toast('Este resumen vence en '+mName(C)+'. Para otro mes usá las flechas.');return}
+        if(ci<=cierreDate(addM(C,-1),c)){toast('El cierre tiene que ser posterior al del resumen anterior ('+dShort(cierreDate(addM(C,-1),c))+')');return}
+        if(ci===defCierre(C,c)&&ve===defVence(C,c))delete c.fechasV[C];else c.fechasV[C]={cierre:ci,vence:ve};
         saveCfg();closeSheet();toast('Fechas del resumen guardadas')}
     });
   });
@@ -955,7 +962,7 @@ function sheetResumen(cardId,C){
 function sheetCuota(init){
   const editing=!!init;
   let x;
-  if(editing){const c=cardOf(init.medio),n=+init.cuotas,c0=init.c0||cierreYM(init.fecha,c),Cn=cierreYM(today(),c);
+  if(editing){const c=cardOf(init.medio),n=+init.cuotas,c0=v0Of(init,c),Cn=cierreYM(today(),c);
     x={id:init.id,ts:init.ts,fecha:init.fecha,medio:init.medio,desc:init.desc,cat:init.cat,moneda:init.moneda,tc:init.tc,n,cuota:nf2.format(init.monto/n),prox:Math.min(n,Math.max(1,mDiff(c0,Cn)+1)),k0:+init.k0||0,c0}}
   else x={medio:'tc:'+(S.cfg.tarjetas[0]||{}).id,desc:'',cat:null,moneda:'ARS',n:12,cuota:'',prox:1};
   openSheet(editing?'Editar compra en cuotas':'Cuotas que ya venía pagando',body=>{
@@ -973,7 +980,7 @@ function sheetCuota(init){
       if(k==='save'){const c=cardOf(x.medio);const cu=parseAmt(x.cuota);if(!c){toast('Elegí una tarjeta');return}if(!(cu>0)){toast('Ingresá el monto de la cuota');return}
         const Cn=cierreYM(today(),c),c0=addM(Cn,-(x.prox-1));
         const nativa=editing&&!init.importada;
-        const mov={id:x.id||rid(),ts:x.ts||Date.now(),tipo:'gasto',monto:cu*x.n,moneda:x.moneda,cat:x.cat||'g-otros',medio:x.medio,cuotas:x.n,fecha:nativa?x.fecha:(x.fecha||today()),desc:(x.desc||'').trim(),c0};
+        const mov={id:x.id||rid(),ts:x.ts||Date.now(),tipo:'gasto',monto:cu*x.n,moneda:x.moneda,cat:x.cat||'g-otros',medio:x.medio,cuotas:x.n,fecha:nativa?x.fecha:(x.fecha||today()),desc:(x.desc||'').trim(),v0:c0};
         if(!nativa){mov.importada=true;mov.k0=x.prox-1}else{mov.k0=x.k0}
         if(x.moneda==='USD')mov.tc=x.tc||tcFor(mov.fecha);
         if(editing)removeMov(x.id);monthDoc(ymOf(mov.fecha)).movs.push(mov);saveMonth(ymOf(mov.fecha));closeSheet();toast('Cuotas guardadas');return}
