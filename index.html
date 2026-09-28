@@ -327,7 +327,7 @@ async function connect(){
 
 /* ---------- Firebase ---------- */
 const FB_VER='10.12.2';
-const FB_CONFIG=null; // opcional: pegá acá tu firebaseConfig para no cargarla en cada dispositivo
+const FB_CONFIG={apiKey:"AIzaSyDpqKVTw1u__z7d5dQhOjY_uTuflUrpdhA",authDomain:"balance-a3fbb.firebaseapp.com",projectId:"balance-a3fbb",storageBucket:"balance-a3fbb.firebasestorage.app",messagingSenderId:"268165766601",appId:"1:268165766601:web:13421640fe65cf0808dc18"};
 const FB={state:'off',user:null,unsub:null,err:''};
 function parseFbConfig(txt){
   const o={};let m;const re=/(\w+)\s*["']?\s*:\s*["']([^"']+)["']/g;
@@ -390,7 +390,7 @@ function vSync(){
     <div class="muted" style="font-size:12.5px;text-align:center;margin:12px 0 4px">o con mail y contraseña</div>
     <div class="grid2" style="margin-top:0"><label class="f">Mail<input id="fb-em" type="email" autocomplete="username"></label><label class="f">Contraseña<input id="fb-pw" type="password" autocomplete="current-password"></label></div>
     <div class="btns"><button class="btn" data-act="fbNew">Crear cuenta</button><button class="btn primary" data-act="fbIn">Entrar</button></div>
-    <div style="margin-top:10px;display:flex;gap:16px"><button class="link" data-act="fbReset">Olvidé la contraseña</button><button class="link" data-act="fbForget" style="color:var(--ink2)">Borrar configuración</button></div>`;
+    <div style="margin-top:10px;display:flex;gap:16px"><button class="link" data-act="fbReset">Olvidé la contraseña</button>${FB_CONFIG?'':'<button class="link" data-act="fbForget" style="color:var(--ink2)">Borrar configuración</button>'}</div>`;
   else b=`<div class="kv"><span>Conectada como</span><b style="font-weight:600">${esc(FB.user.email)}</b></div><div class="kv"><span>Estado</span><b style="font-weight:600" class="${S.sync==='cloud'?'pos':S.sync==='error'?'neg':''}">${S.sync==='cloud'?'Sincronizando':S.sync==='error'?'Con problemas':'Esperando conexión'}</b></div>
     <div class="muted" style="font-size:12.5px">Funciona sin internet: lo que cargues se sube cuando vuelva la conexión.</div>
     <div class="btns"><button class="btn" data-act="fbOut">Cerrar sesión</button></div>`;
