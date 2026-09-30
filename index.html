@@ -431,17 +431,26 @@ function cardItemsDue(M){
   for(const f of S.cfg.fijos){
     if(f.tipo!=='gasto'||!isCard(f.medio))continue;
     const c=cardOf(f.medio);if(!c)continue;
-    for(let j=-2;j<=0;j++){
-      const C=addM(M,j);if(!fijoActive(f,C))continue;
-      const fecha=C+'-'+pad(Math.min(+f.dia||1,dim(C)));
-      const Cf=cierreYM(fecha,c);if(Cf===M&&!out.some(o=>o.fijo===f&&o.card===c))out.push({C:Cf,orig:f.moneda==='USD'?money(f.monto,'USD'):'',fijo:f,k:0,n:1,card:c,monto:fARS(f),cat:f.cat,desc:f.nombre+' (fijo)'});
+    for(let j=-2;j<=0;j++)for(const fecha of ocurrencias(f,addM(M,j))){
+      const Cf=cierreYM(fecha,c);if(Cf===M&&!out.some(o=>o.fijo===f&&(!esSem(f)||o.occ===fecha)))out.push({C:Cf,occ:fecha,orig:f.moneda==='USD'?money(f.monto,'USD'):'',fijo:f,k:0,n:1,card:c,monto:fARS(f),cat:f.cat,desc:f.nombre+' (fijo)'});
     }
   }
   return out;
 }
+const DSEM=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const esSem=f=>f.frec==='semanal';
+function ocurrencias(f,M){
+  if(!fijoActive(f,M))return [];
+  if(!esSem(f))return [M+'-'+pad(Math.min(+f.dia||1,dim(M)))];
+  const [y,mo]=M.split('-').map(Number),out=[];
+  for(let d=1;d<=dim(M);d++)if(new Date(y,mo-1,d).getDay()===+f.dow)out.push(M+'-'+pad(d));
+  return out;
+}
+const paidOf=(movs,f,occ)=>movs.find(m=>m.fijoId===f.id&&(!esSem(f)||m.occ===occ));
+const omitKey=(f,occ)=>esSem(f)?f.id+'@'+occ:f.id;
 function pendingFijos(M){
   const d=getM(M),movs=d.movs||[],omit=d.omit||{};
-  return S.cfg.fijos.filter(f=>fijoActive(f,M)&&!isCard(f.medio)&&!omit[f.id]&&!movs.some(m=>m.fijoId===f.id)).map(f=>({f,monto:fARS(f)}));
+  return S.cfg.fijos.filter(f=>!isCard(f.medio)).flatMap(f=>ocurrencias(f,M).filter(o=>!omit[omitKey(f,o)]&&!paidOf(movs,f,o)).map(o=>({f,occ:o,monto:fARS(f)})));
 }
 function ahorroUSD(M){let s=0;for(const m of (getM(M).movs||[])){if(m.tipo!=='inversion'||m.origen==='cartera')continue;const sg=m.op==='venta'?-1:1;const p=S.cfg.cartera.find(q=>q.id===m.posId)||{};
   const usd=m.moneda==='USD'?+m.monto:(p.tipo==='Dólares'?+m.cantidad:toARS(m)/(tcFor(m.fecha)||tc()||1));s+=sg*(usd||0)}return s}
@@ -475,8 +484,9 @@ function agenda(M){
   const d=getM(M),movs=d.movs||[],pagos=d.pagos||{},omit=d.omit||{},items=[];
   for(const f of S.cfg.fijos){
     if(!fijoActive(f,M)||isCard(f.medio))continue;
-    const paid=movs.find(m=>m.fijoId===f.id);
-    items.push({kind:'fijo',f,dia:Math.min(+f.dia||1,dim(M)),nombre:f.nombre,monto:paid?toARS(paid):fARS(f),estado:paid?'ok':omit[f.id]?'omit':'pend',sub:(f.tipo==='ingreso'?'Ingreso fijo':'Fijo')+' · '+medioName(f.medio),tipo:f.tipo});
+    const occs=ocurrencias(f,M);
+    occs.forEach((occ,i)=>{const paid=paidOf(movs,f,occ);
+      items.push({kind:'fijo',f,occ,dia:dayOf(occ),nombre:f.nombre,monto:paid?toARS(paid):fARS(f),estado:paid?'ok':omit[omitKey(f,occ)]?'omit':'pend',sub:(esSem(f)?'Semanal · '+(i+1)+' de '+occs.length:(f.tipo==='ingreso'?'Ingreso fijo':'Fijo'))+' · '+medioName(f.medio),tipo:f.tipo})});
   }
   const byCard={};
   for(const i of cardItemsDue(M))(byCard[i.card.id]=byCard[i.card.id]||{card:i.card,items:[]}).items.push(i);
@@ -639,9 +649,9 @@ function vInicio(){
 function itemAgenda(it){
   const dstate=it.estado==='ok'?'ok':it.over?'over':'';
   const btn=it.estado==='ok'?`<span class="tag ok">${it.tipo==='ingreso'?'Cobrado':'Pagado'}</span>`:it.estado==='omit'?`<span class="tag">Omitido</span>`:
-    it.kind==='card'?`<button class="act go" data-act="payCard" data-id="${it.card.id}">Pagado</button>`:`<button class="act go" data-act="payFijo" data-id="${it.f.id}">${it.tipo==='ingreso'?'Cobrar':'Pagar'}</button>`;
+    it.kind==='card'?`<button class="act go" data-act="payCard" data-id="${it.card.id}">Pagado</button>`:`<button class="act go" data-act="payFijo" data-id="${it.f.id}" data-occ="${it.occ||''}">${it.tipo==='ingreso'?'Cobrar':'Pagar'}</button>`;
   const key=it.kind==='card'?'c'+it.card.id:'f'+it.f.id;
-  let h=`<div class="item" data-act="${it.kind==='card'?'toggleOpen':'agendaFijo'}" data-id="${it.kind==='card'?key:it.f.id}">
+  let h=`<div class="item" data-act="${it.kind==='card'?'toggleOpen':'agendaFijo'}" data-id="${it.kind==='card'?key:it.f.id}" data-occ="${it.occ||''}">
     <div class="day ${dstate}"><div><b>${it.dia}</b><small>${mShort(S.cur)}</small></div></div>
     <div class="grow"><div class="t">${esc(it.nombre)}</div><div class="s">${it.over?'<span class="tag over">Vencido</span> ':''}${esc(it.sub)}</div></div>
     <div class="amt ${it.tipo==='ingreso'?'pos':''}">${money(it.monto)}</div>${btn}</div>`;
@@ -679,7 +689,7 @@ function vPlan(){
   </section>
   <section class="panel">
     <h2>Gastos e ingresos fijos <span class="aside"><button class="link" data-act="newFijo">Agregar</button></span></h2>
-    ${S.cfg.fijos.length?`<div class="list">${[...S.cfg.fijos].sort((a,b)=>(a.tipo>b.tipo?-1:1)||a.dia-b.dia).map(f=>`<div class="item" data-act="editFijo" data-id="${f.id}"><i class="cdot" style="background:${catOf(f.cat).color}"></i><div class="grow"><div class="t">${esc(f.nombre)}</div><div class="s">Día ${f.dia} · ${esc(medioName(f.medio))}${isCard(f.medio)?' (débito automático)':''}${f.hasta?' · hasta '+mShort(f.hasta)+' '+f.hasta.slice(0,4):''}</div></div><div class="amt ${f.tipo==='ingreso'?'pos':''}">${money(f.monto,f.moneda)}</div></div>`).join('')}</div>`:`<div class="empty">Alquiler, expensas, luz, gas, internet, prepaga, sueldo… Cargalos una vez y aparecen solos en la agenda de cada mes.</div>`}
+    ${S.cfg.fijos.length?`<div class="list">${[...S.cfg.fijos].sort((a,b)=>(a.tipo>b.tipo?-1:1)||a.dia-b.dia).map(f=>`<div class="item" data-act="editFijo" data-id="${f.id}"><i class="cdot" style="background:${catOf(f.cat).color}"></i><div class="grow"><div class="t">${esc(f.nombre)}</div><div class="s">${esSem(f)?'Cada '+DSEM[+f.dow]+' · por vez':'Día '+f.dia} · ${esc(medioName(f.medio))}${isCard(f.medio)?' (débito automático)':''}${f.hasta?' · hasta '+mShort(f.hasta)+' '+f.hasta.slice(0,4):''}</div></div><div class="amt ${f.tipo==='ingreso'?'pos':''}">${money(f.monto,f.moneda)}</div></div>`).join('')}</div>`:`<div class="empty">Alquiler, expensas, luz, gas, internet, prepaga, sueldo… Cargalos una vez y aparecen solos en la agenda de cada mes.</div>`}
   </section>
   </div>`;
 }
@@ -918,6 +928,7 @@ function sheetMov(init={}){
         const mov={id:m.id||rid(),ts:m.ts||Date.now(),tipo:m.tipo,monto:amt,moneda:m.moneda,cat:m.cat||(S.cfg.cats.find(c=>c.id===catDef)?catDef:S.cfg.cats.find(c=>c.tipo===m.tipo).id),medio:m.medio,cuotas:isCard(m.medio)?(+m.cuotas||1):1,fecha:m.fecha,desc:(m.desc||'').trim()};
         if(m.moneda==='USD')mov.tc=m.tc||tcFor(mov.fecha);
         if(m.fijoId)mov.fijoId=m.fijoId;
+        if(m.occ)mov.occ=m.occ;
         if(editing)removeMov(m.id);
         monthDoc(ymOf(mov.fecha)).movs.push(mov);saveMonth(ymOf(mov.fecha));
         closeSheet();toast(m.tipo==='ingreso'?'Ingreso guardado':'Gasto guardado');return;
@@ -936,29 +947,30 @@ function sheetMov(init={}){
 
 function sheetFijo(f){
   const editing=!!f;
-  const x=Object.assign({tipo:'gasto',nombre:'',monto:'',moneda:'ARS',cat:null,medio:'debito',dia:10,desde:S.cur,hasta:''},f?JSON.parse(JSON.stringify(f)):{});
+  const x=Object.assign({tipo:'gasto',frec:'mensual',dow:1,nombre:'',monto:'',moneda:'ARS',cat:null,medio:'debito',dia:10,desde:S.cur,hasta:''},f?JSON.parse(JSON.stringify(f)):{});
   if(x.monto!=='')x.monto=nf2.format(x.monto);
   openSheet(editing?'Editar fijo':'Nuevo gasto o ingreso fijo',body=>{
-    const read=()=>{const g=s=>body.querySelector(s);x.nombre=g('#x-n').value;x.monto=g('#x-m').value;x.dia=Math.max(1,Math.min(31,parseInt(g('#x-d').value)||1));x.desde=g('#x-desde').value||S.cur;x.hasta=g('#x-hasta').value||''};
+    const read=()=>{const g=s=>body.querySelector(s);x.nombre=g('#x-n').value;x.monto=g('#x-m').value;if(g('#x-d'))x.dia=Math.max(1,Math.min(31,parseInt(g('#x-d').value)||1));x.desde=g('#x-desde').value||S.cur;x.hasta=g('#x-hasta').value||''};
     const draw=()=>{
       const cats=S.cfg.cats.filter(c=>c.tipo===x.tipo);
       const medios=[...MEDIOS,...(x.tipo==='gasto'?S.cfg.tarjetas.map(t=>({id:'tc:'+t.id,nombre:t.nombre})):[])];
       body.innerHTML=`${segH('tipo',[{v:'gasto',l:'Gasto fijo'},{v:'ingreso',l:'Ingreso fijo'}],x.tipo)}
         <label class="f" style="margin-top:14px">Nombre<input id="x-n" value="${esc(x.nombre)}" placeholder="${x.tipo==='gasto'?'Ej: Alquiler, Luz, Internet':'Ej: Sueldo'}"></label>
-        <div class="amt-in"><button type="button" class="cur ${x.moneda==='USD'?'usd':''}" data-k="moneda" data-v="${x.moneda==='USD'?'ARS':'USD'}">${x.moneda==='USD'?'US$':'$'}</button><input id="x-m" inputmode="decimal" placeholder="Monto estimado" value="${esc(x.monto)}"></div>
-        <div class="grid2"><label class="f">Día de vencimiento<input id="x-d" type="number" min="1" max="31" value="${x.dia}"></label><div></div></div>
+        <div class="amt-in"><button type="button" class="cur ${x.moneda==='USD'?'usd':''}" data-k="moneda" data-v="${x.moneda==='USD'?'ARS':'USD'}">${x.moneda==='USD'?'US$':'$'}</button><input id="x-m" inputmode="decimal" placeholder="${esSem(x)?'Monto por vez':'Monto estimado'}" value="${esc(x.monto)}"></div>
+        <div class="fl">Se repite</div>${segH('frec',[{v:'mensual',l:'Cada mes'},{v:'semanal',l:'Cada semana'}],x.frec||'mensual')}
+        ${esSem(x)?`<div class="fl">Qué día</div><div class="chips">${chipsH('dow',[1,2,3,4,5,6,0].map(d=>({v:d,l:DSEM[d][0].toUpperCase()+DSEM[d].slice(1,3)})),x.dow)}</div>${(()=>{const M=x.desde||S.cur,n=ocurrencias(Object.assign({},x,{desde:null,hasta:null}),M).length,a=parseAmt(x.monto);return a?`<div class="hint">En ${mName(M)} hay ${n} ${DSEM[+x.dow]}: <b>${money(n*a,x.moneda)}</b>. Los meses con 5 semanas se calculan solos.</div>`:''})()}`:`<div class="grid2"><label class="f">Día de vencimiento<input id="x-d" type="number" min="1" max="31" value="${x.dia}"></label><div></div></div>`}
         <div class="fl">Categoría</div><div class="chips">${chipsH('cat',cats.map(c=>({v:c.id,l:c.nombre,dot:c.color})),x.cat)}</div>
         <div class="fl">${x.tipo==='gasto'?'Cómo se paga':'Dónde entra'}</div><div class="chips">${chipsH('medio',medios.map(m=>({v:m.id,l:m.nombre})),x.medio)}</div>
-        ${isCard(x.medio)?`<div class="hint">Débito automático en tarjeta: se suma solo al resumen cada mes, no hace falta marcarlo.${(()=>{const c=cardOf(x.medio);if(!c||!x.desde)return '';const f=x.desde+'-'+pad(Math.min(+x.dia||1,dim(x.desde))),V=cierreYM(f,c);return ` El primer cargo (${dShort(f)}) entra en el resumen que vence el <b>${dShort(venceDate(V,c))}</b>. Si ya aparece en un resumen anterior, poné un "Desde" más temprano.`})()}</div>`:`<div class="hint">Cada mes aparece en la agenda. Al marcarlo como ${x.tipo==='gasto'?'pagado':'cobrado'} podés ajustar el monto real.</div>`}
+        ${isCard(x.medio)?`<div class="hint">Débito automático en tarjeta: se suma solo al resumen cada mes, no hace falta marcarlo.${(()=>{const c=cardOf(x.medio);if(!c||!x.desde)return '';if(esSem(x))return '';const f=x.desde+'-'+pad(Math.min(+x.dia||1,dim(x.desde))),V=cierreYM(f,c);return ` El primer cargo (${dShort(f)}) entra en el resumen que vence el <b>${dShort(venceDate(V,c))}</b>. Si ya aparece en un resumen anterior, poné un "Desde" más temprano.`})()}</div>`:`<div class="hint">Cada mes aparece en la agenda. Al marcarlo como ${x.tipo==='gasto'?'pagado':'cobrado'} podés ajustar el monto real.</div>`}
         <div class="grid2"><label class="f">Desde<input id="x-desde" type="month" value="${x.desde}"></label><label class="f">Hasta (opcional)<input id="x-hasta" type="month" value="${x.hasta||''}"></label></div>
         <div class="btns">${editing?'<button class="btn danger" data-k="del">Eliminar</button>':''}<button class="btn primary" data-k="save">Guardar</button></div>`;
     };
-    body.addEventListener('change',e=>{if(e.target.id==='x-desde'||e.target.id==='x-d'){read();draw()}});
+    body.addEventListener('change',e=>{if(['x-desde','x-d','x-m'].includes(e.target.id)){read();draw()}});
     body.addEventListener('click',e=>{
       const b=e.target.closest('[data-k]');if(!b)return;read();const k=b.dataset.k,v=b.dataset.v;
       if(k==='save'){
         if(!x.nombre.trim()){toast('Poné un nombre');return}
-        const out={id:x.id||rid(),tipo:x.tipo,nombre:x.nombre.trim(),monto:parseAmt(x.monto),moneda:x.moneda,cat:x.cat||S.cfg.cats.find(c=>c.tipo===x.tipo).id,medio:x.medio,dia:x.dia,desde:x.desde,hasta:x.hasta||null};
+        const out={id:x.id||rid(),tipo:x.tipo,nombre:x.nombre.trim(),monto:parseAmt(x.monto),moneda:x.moneda,cat:x.cat||S.cfg.cats.find(c=>c.tipo===x.tipo).id,medio:x.medio,dia:x.dia,frec:x.frec||'mensual',dow:+x.dow,desde:x.desde,hasta:x.hasta||null};
         const i=S.cfg.fijos.findIndex(q=>q.id===out.id);if(i>=0)S.cfg.fijos[i]=out;else S.cfg.fijos.push(out);
         saveCfg();closeSheet();toast('Fijo guardado');return;
       }
@@ -969,26 +981,28 @@ function sheetFijo(f){
   });
 }
 
-function sheetAgendaFijo(id){
+function sheetAgendaFijo(id,occ){
   const f=S.cfg.fijos.find(q=>q.id===id);if(!f)return;
-  const M=S.cur,d=getM(M),paid=(d.movs||[]).find(m=>m.fijoId===id),om=d.omit&&d.omit[id];
+  const M=S.cur,d=getM(M);occ=occ||ocurrencias(f,M)[0];const paid=paidOf(d.movs||[],f,occ),ok=omitKey(f,occ),om=d.omit&&d.omit[ok];
   openSheet(f.nombre,body=>{
-    body.innerHTML=`<div class="kv"><span>Vence</span><b>día ${f.dia} de ${mName(M)}</b></div><div class="kv"><span>Monto estimado</span><b>${money(f.monto,f.moneda)}</b></div><div class="kv"><span>Medio</span><b>${esc(medioName(f.medio))}</b></div>
+    body.innerHTML=`<div class="kv"><span>${esSem(f)?'Fecha':'Vence'}</span><b>${esSem(f)?DSEM[dayjs(occ)]+' '+dShort(occ):'día '+f.dia+' de '+mName(M)}</b></div><div class="kv"><span>Monto estimado</span><b>${money(f.monto,f.moneda)}</b></div><div class="kv"><span>Medio</span><b>${esc(medioName(f.medio))}</b></div>
     ${paid?`<div class="kv"><span>${f.tipo==='ingreso'?'Cobrado':'Pagado'}</span><b class="pos">${money(paid.monto,paid.moneda)} el ${dShort(paid.fecha)}</b></div>`:''}
     <div class="btns" style="flex-wrap:wrap">
-      ${paid?`<button class="btn" data-k="editpaid">Editar ${f.tipo==='ingreso'?'cobro':'pago'}</button>`:om?`<button class="btn" data-k="unomit">Volver a pendiente</button>`:`<button class="btn" data-k="omit">Este mes no corresponde</button><button class="btn primary" data-k="pay">${f.tipo==='ingreso'?'Registrar cobro':'Registrar pago'}</button>`}
+      ${paid?`<button class="btn" data-k="editpaid">Editar ${f.tipo==='ingreso'?'cobro':'pago'}</button>`:om?`<button class="btn" data-k="unomit">Volver a pendiente</button>`:`<button class="btn" data-k="omit">${esSem(f)?'Esta vez no corresponde':'Este mes no corresponde'}</button><button class="btn primary" data-k="pay">${f.tipo==='ingreso'?'Registrar cobro':'Registrar pago'}</button>`}
       <button class="btn" data-k="edit">Editar fijo</button>
     </div>`;
     body.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;const k=b.dataset.k;
-      if(k==='pay'){closeSheet(true);payFijo(id)}
+      if(k==='pay'){closeSheet(true);payFijo(id,occ)}
       if(k==='editpaid'){closeSheet(true);sheetMov(paid)}
       if(k==='edit'){closeSheet(true);sheetFijo(f)}
-      if(k==='omit'||k==='unomit'){const md=monthDoc(M);if(k==='omit')md.omit[id]=true;else delete md.omit[id];saveMonth(M);closeSheet()}
+      if(k==='omit'||k==='unomit'){const md=monthDoc(M);if(k==='omit')md.omit[ok]=true;else delete md.omit[ok];saveMonth(M);closeSheet()}
     });
   });
 }
-function payFijo(id){
+const dayjs=f=>new Date(f+'T12:00').getDay();
+function payFijo(id,occ){
   const f=S.cfg.fijos.find(q=>q.id===id);if(!f)return;const M=S.cur,t=today();
+  if(esSem(f)){occ=occ||ocurrencias(f,M)[0];sheetMov({tipo:f.tipo,monto:f.monto||'',moneda:f.moneda,cat:f.cat,medio:f.medio,desc:f.nombre,fijoId:f.id,occ,fecha:occ});return}
   sheetMov({tipo:f.tipo,monto:f.monto||'',moneda:f.moneda,cat:f.cat,medio:f.medio,desc:f.nombre,fijoId:f.id,fecha:M===ymOf(t)?t:M+'-'+pad(Math.min(+f.dia||1,dim(M)))});
 }
 
@@ -1179,8 +1193,8 @@ const ACT={
   editMov:d=>{const f=findMov(d.id);if(!f)return;if(f.m.viaje)sheetViaje(f.m);else sheetMov(f.m)},
   viaje:d=>addViaje(+d.v),trConfig:()=>sheetTransporte(),
   editOp:d=>{const f=findMov(d.id);if(f)sheetOp(f.m)},
-  payFijo:d=>payFijo(d.id),
-  agendaFijo:d=>sheetAgendaFijo(d.id),
+  payFijo:d=>payFijo(d.id,d.occ),
+  agendaFijo:d=>sheetAgendaFijo(d.id,d.occ),
   payCard:d=>{const md=monthDoc(S.cur);md.pagos[d.id]=!md.pagos[d.id];if(!md.pagos[d.id])delete md.pagos[d.id];saveMonth(S.cur);toast(md.pagos[d.id]?'Resumen marcado como pagado':'Resumen pendiente');render()},
   toggleOpen:d=>{S.open[d.id]=!S.open[d.id];render()},
   newFijo:()=>sheetFijo(),
