@@ -305,6 +305,7 @@ function attachRemote(col,linkKey){
         S.remote=col;setSync('cloud');LS.set(linkKey,true);saveCfg();for(const k of Object.keys(S.months))saveMonth(k);render();return;
       }
       LS.set(linkKey,true);S.remote=col;setSync('cloud');S.months={};
+      setTimeout(()=>fetchTc(false),0);
     }
     for(const d of qs.docs){
       if(S.dirty.has(d.id))continue;
@@ -766,6 +767,7 @@ function vAjustes(){
       <div><div class="fl" style="margin-top:0">Valor que usás</div>${segH('tcTipo',[{v:'venta',l:'Venta'},{v:'compra',l:'Compra'}],S.cfg.tcTipo)}</div>
     </div>
     ${STANDALONE?`<button class="btn block" style="margin-top:12px" data-act="fetchTc">Actualizar ahora desde internet</button><div class="muted" style="font-size:12.5px;margin-top:6px">Se actualiza sola al abrir la app. Si Santander no responde, usa el oficial promedio y te avisa.</div>`:''}
+    ${STANDALONE&&LS.get('tcLog')?`<div class="hint">Último intento automático (${new Date(LS.get('tcLog').t).toLocaleString('es-AR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}): ${esc(LS.get('tcLog').msg)}</div>`:''}
     <div style="margin-top:10px"><a href="https://www.santander.com.ar/personas/inversiones/compra-de-moneda-extranjera" target="_blank" rel="noopener" class="link" style="text-decoration:none">Ver cotización en Santander</a></div>
     <div class="muted" style="font-size:12.5px;margin-top:8px">Queda un historial por día: cada movimiento en dólares toma la cotización de su fecha, así los meses pasados no cambian.</div>
     ${Object.keys(S.cfg.tcHist||{}).length?`<div class="list" style="margin-top:8px">${Object.entries(S.cfg.tcHist).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,5).map(([f,v])=>`<div class="kv"><span class="muted">${dShort(f)}</span><b>${money(v)}</b></div>`).join('')}</div>`:''}
@@ -858,10 +860,16 @@ async function fetchTc(force){
   const venta=S.cfg.tcTipo!=='compra';
   tcTrying=true;if(force)toast('Buscando cotización…');
   try{
-    try{const j=await get('https://criptoya.com/api/bancostodos');const s=j&&j.santander;const v=s&&+(venta?s.ask:s.bid);
-      if(v>0){setTc(v,'Santander');if(force)toast('Dólar Santander: '+money(v));return true}}catch(e){}
+    const log=(ok,msg)=>LS.set('tcLog',{t:new Date().toISOString(),ok,msg});
+    let err1='',err2='';
+    try{const j=await get('https://criptoya.com/api/bancostodos');const s=j&&j.santander;
+      const v=s&&+(venta?(s.ask??s.totalAsk):(s.bid??s.totalBid));
+      if(v>0){setTc(v,'Santander');log(true,'Santander respondió '+money(v));if(force)toast('Dólar Santander: '+money(v));return true}
+      err1=s?'respondió sin valor':'no incluye a Santander'}catch(e){err1=e&&e.name==='AbortError'?'tardó demasiado':(e&&e.message)||'sin respuesta'}
     try{const j=await get('https://dolarapi.com/v1/dolares/oficial');const v=j&&+j[venta?'venta':'compra'];
-      if(v>0){setTc(v,'Oficial promedio');toast('Santander no respondió: usé el oficial promedio, '+money(v));return true}}catch(e){}
+      if(v>0){setTc(v,'Oficial promedio');log(false,'Santander: '+err1+'. Usé el oficial promedio '+money(v));toast('Santander no respondió: usé el oficial promedio, '+money(v));return true}
+      err2='respondió sin valor'}catch(e){err2=e&&e.name==='AbortError'?'tardó demasiado':(e&&e.message)||'sin respuesta'}
+    log(false,'Santander: '+err1+'. Oficial: '+err2+'.');
     if(force)toast('No pude traer la cotización. Cargala a mano.');
     return false;
   }finally{tcTrying=false;if(!$('.overlay'))render()}
