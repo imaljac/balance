@@ -53,7 +53,10 @@ header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;backgroun
 .month{display:flex;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:2px}
 .month button{border:0;background:none;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;color:var(--ink)}
 .month button:hover{background:var(--sunk)}
-.month span{min-width:118px;text-align:center;font-weight:600;font-size:14px}
+.month #mlabel{min-width:118px;text-align:center;font-weight:600;font-size:14px}
+.ml-s{display:none}
+@media (max-width:440px){.month #mlabel{min-width:72px}.ml-l{display:none}.ml-s{display:inline}}
+@media (max-width:350px){header.top{padding-left:10px;padding-right:10px}.top-in{gap:6px}.month button{width:30px}.brand{font-size:17px}}
 .icon-btn{border:1px solid var(--line);background:var(--panel);width:38px;height:38px;border-radius:50%;cursor:pointer;display:grid;place-items:center}
 .icon-btn svg{width:18px;height:18px}
 
@@ -134,7 +137,7 @@ label.f input,label.f select,label.f textarea{display:block;width:100%;margin-to
 .amt-in input{flex:1;min-width:0;border:0;background:none;outline:none;font-stretch:125%;font-weight:750;font-size:40px;font-variant-numeric:tabular-nums;padding:0}
 .cur{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:8px 10px;font-weight:700;cursor:pointer;min-width:62px}
 .cur.usd{color:var(--usd);border-color:var(--usd)}
-.hint{font-size:13px;color:var(--ink2);margin-top:10px;padding:10px 12px;background:var(--sunk);border-radius:10px}
+.hint{font-size:13px;color:var(--ink2);margin-top:10px;padding:10px 12px;background:var(--sunk);border-radius:10px;overflow-wrap:anywhere}
 .btns{display:flex;gap:10px;margin-top:18px}
 .btn{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px 16px;font-weight:650;cursor:pointer}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);flex:1}
@@ -861,7 +864,7 @@ function drawCharts(){
 
 /* ---------- render ---------- */
 function render(){
-  $('#mlabel').textContent=mTitle(S.cur);
+  $('#mlabel').innerHTML=`<span class="ml-l">${mTitle(S.cur)}</span><span class="ml-s">${mTitle(S.cur).slice(0,3)} ${S.cur.slice(0,4)}</span>`;
   $('#monthbox').style.visibility=(S.view==='cartera'||S.view==='ajustes')?'hidden':'visible';
   document.querySelectorAll('.nav-in [data-act="go"]').forEach(b=>b.setAttribute('aria-current',b.dataset.v===S.view?'page':'false'));
   const y=window.scrollY;
@@ -1301,7 +1304,7 @@ $('#importfile').addEventListener('change',e=>{
 
 /* ---------- compras: precios, stock y lista ---------- */
 function normCmp(c){c=Object.assign({negocios:[],productos:[],precios:[],compras:[]},c||{});for(const k of ['negocios','productos','precios','compras'])if(!Array.isArray(c[k]))c[k]=[];return c}
-const CMP_U={kg:{n:'Peso',subs:[['g',1000],['kg',1]],por:'/kg'},l:{n:'Volumen',subs:[['ml',1000],['l',1]],por:'/l'},u:{n:'Unidades',subs:[['u',1]],por:' c/u'}};
+const CMP_U={kg:{n:'Peso',subs:[['g',1000],['kg',1]],por:'/kg'},l:{n:'Volumen',subs:[['ml',1000],['l',1]],por:'/l'},u:{n:'Unidades',subs:[['u',1]],por:' c/u'},m:{n:'Largo',subs:[['m',1]],por:'/m'}};
 const cmpSave=()=>persist('compras');
 const prodOf=id=>S.compras.productos.find(p=>p.id===id);
 const negOf=id=>S.compras.negocios.find(n=>n.id===id);
@@ -1309,11 +1312,11 @@ const negName=id=>(negOf(id)||{nombre:'Negocio borrado'}).nombre;
 const daysBetween=(a,b)=>Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5);
 const unitP=o=>o.precio/((+o.paq||1)*(+o.cont||1));
 const pkgP=o=>o.precio/(+o.paq||1);
-function fmtCont(c,u){c=+c||0;if(u==='kg')return c<1?nf0.format(c*1000)+' g':nf2.format(c)+' kg';if(u==='l')return c<1?nf0.format(c*1000)+' ml':nf2.format(c)+' l';return nf0.format(c)+' u'}
+function fmtCont(c,u){c=+c||0;if(u==='kg')return c<1?nf0.format(c*1000)+' g':nf2.format(c)+' kg';if(u==='l')return c<1?nf0.format(c*1000)+' ml':nf2.format(c)+' l';if(u==='m')return nf2.format(c)+' m';return nf0.format(c)+' u'}
 const fmtUnit=(v,u)=>money(v)+CMP_U[u||'u'].por;
 function contSplit(c,u){const subs=CMP_U[u||'u'].subs;if(!c)return {v:'',sub:subs[0][0]};if(subs.length>1&&c<1)return {v:nf2.format(c*subs[0][1]),sub:subs[0][0]};return {v:nf2.format(c),sub:subs[subs.length-1][0]}}
 const contBase=(v,sub,u)=>{const f=(CMP_U[u||'u'].subs.find(x=>x[0]===sub)||[0,1])[1];return parseAmt(v)/f};
-function parseContTxt(t,u){const n=parseAmt(t);if(!(n>0))return 0;if(/\b(g|gr|grs|ml|cc)\b/i.test(t))return n/1000;if(/\b(kg|l|lt|lts|litros?)\b/i.test(t))return n;return u!=='u'&&n>=20?n/1000:n}
+function parseContTxt(t,u){const n=parseAmt(t);if(!(n>0))return 0;if(/\b(g|gr|grs|ml|cc)\b/i.test(t))return n/1000;if(/\b(kg|l|lt|lts|litros?)\b/i.test(t))return n;return (u==='kg'||u==='l')&&n>=20?n/1000:n}
 function obsOf(pid){return S.compras.precios.filter(o=>o.p===pid).sort((a,b)=>a.f.localeCompare(b.f)||(a.ts||0)-(b.ts||0))}
 function lastObs(pid,nid){const a=obsOf(pid);for(let i=a.length-1;i>=0;i--)if(!nid||a[i].n===nid)return a[i];return null}
 function actuales(pid){const r={};for(const o of obsOf(pid))r[o.n]=o;return Object.values(r).filter(o=>negOf(o.n)).sort((a,b)=>unitP(a)-unitP(b))}
@@ -1385,7 +1388,7 @@ function sheetPrecio(init={}){
     const read=()=>{const g=id=>body.querySelector(id);if(g('#pr-p'))x.precio=g('#pr-p').value;if(g('#pr-c'))x.c=g('#pr-c').value;if(g('#pr-q'))x.q=g('#pr-q').value;if(g('#pr-f'))x.f=g('#pr-f').value||today();if(g('#np-n'))x.nn=g('#np-n').value;if(g('#pr-s'))x.q2=g('#pr-s').value};
     const calc=()=>{const u=uOf(),sub=x.sub||CMP_U[u].subs[0][0];const cont=contBase(x.c,sub,u),pr=parseAmt(x.precio),q=Math.max(1,parseAmt(x.q)||1);return {u,cont,pr,q,unit:cont>0&&pr>0?pr/(q*cont):0}};
     const result=()=>{
-      const r=calc();if(!r.unit)return 'Con el precio y el contenido te calculo el precio por '+(r.u==='kg'?'kilo':r.u==='l'?'litro':'unidad')+' y te digo si es oferta de verdad.';
+      const r=calc();if(!r.unit)return 'Con el precio y el contenido te calculo el precio por '+(r.u==='kg'?'kilo':r.u==='l'?'litro':r.u==='m'?'metro':'unidad')+' y te digo si es oferta de verdad.';
       let t=`<b>${fmtUnit(r.unit,r.u)}</b>`;
       if(x.nuevo||!x.p)return t+'. Es el primer precio de este producto: con dos o tres más ya puedo compararlos.';
       const v=veredicto(x.p,r.unit);
@@ -1402,17 +1405,17 @@ function sheetPrecio(init={}){
         ${C.productos.length>8&&!x.nuevo?`<input id="pr-s" class="search" placeholder="Buscar" value="${esc(x.q2)}" style="width:100%;margin-bottom:8px">`:''}
         <div class="chips">${x.nuevo?'':chipsH('p',prods.map(p=>({v:p.id,l:p.nombre})),x.p)}<button type="button" class="chip" data-k="nuevo" aria-pressed="${x.nuevo}">${x.nuevo?'Producto nuevo':'+ Nuevo'}</button></div>
         ${x.nuevo?`<label class="f">Nombre<input id="np-n" placeholder="Ej: Yerba Playadito 1 kg" value="${esc(x.nn)}"></label>
-          <div class="fl">Se mide por</div>${segH('nu',[{v:'kg',l:'Peso'},{v:'l',l:'Volumen'},{v:'u',l:'Unidades'}],x.nu)}`:''}
+          <div class="fl">Se mide por</div>${segH('nu',[{v:'kg',l:'Peso'},{v:'l',l:'Volumen'},{v:'m',l:'Largo'},{v:'u',l:'Unidades'}],x.nu)}`:''}
         <div class="fl">Negocio</div>
         <div class="chips">${chipsH('n',C.negocios.map(n=>({v:n.id,l:n.nombre})),x.n)}<button type="button" class="chip" data-k="newNeg">+ Nuevo</button></div>
         <div class="fl">Precio en góndola</div>
         <div class="amt-in" style="margin-top:0"><span class="cur">$</span><input id="pr-p" inputmode="decimal" placeholder="0" value="${esc(x.precio)}"></div>
         <div class="grid2">
-          <label class="f">Contenido de cada uno<input id="pr-c" inputmode="decimal" placeholder="${u==='kg'?'Ej: 500':u==='l'?'Ej: 1,5':'Ej: 6'}" value="${esc(x.c)}"></label>
+          <label class="f">Contenido de cada uno<input id="pr-c" inputmode="decimal" placeholder="${u==='kg'?'Ej: 500':u==='l'?'Ej: 1,5':u==='m'?'Ej: 120 (metros del paquete)':'Ej: 6'}" value="${esc(x.c)}"></label>
           <label class="f">Unidades por ese precio<input id="pr-q" inputmode="numeric" value="${esc(x.q)}"></label>
         </div>
         ${subs.length>1?`<div style="margin-top:8px">${segH('sub',subs.map(s=>({v:s[0],l:s[0]})),x.sub)}</div>`:''}
-        <div class="hint" style="margin-top:8px">Para un 2x1 o 3x2 poné lo que pagás en total y cuántas unidades te llevás.</div>
+        <div class="hint" style="margin-top:8px">${u==='m'?'Poné los metros de todo el paquete: 4 rollos de 30 m son 120. ':''}Para un 2x1 o 3x2 poné lo que pagás en total y cuántas unidades te llevás.</div>
         <label class="f">Fecha<input type="date" id="pr-f" value="${x.f}"></label>
         <div class="hint" id="pr-res">${result()}</div>
         <div class="btns"><button class="btn" data-k="save" data-v="otro">Guardar y otro</button><button class="btn primary" data-k="save">Guardar precio</button></div>`;
@@ -1462,7 +1465,7 @@ function sheetProd(p){
       const act=editing?actuales(p.id):[],hist=editing?obsOf(p.id).reverse().slice(0,12):[];
       body.innerHTML=`
         <label class="f" style="margin-top:0">Nombre<input id="pd-n" value="${esc(x.nombre)}" placeholder="Ej: Aceite de girasol"></label>
-        <div class="fl">Se mide por</div>${tieneObs?`<div class="muted">${CMP_U[x.u].n} (precio ${CMP_U[x.u].por.trim()})</div>`:segH('u',[{v:'kg',l:'Peso'},{v:'l',l:'Volumen'},{v:'u',l:'Unidades'}],x.u)}
+        <div class="fl">Se mide por</div>${tieneObs?`<div class="muted">${CMP_U[x.u].n} (precio ${CMP_U[x.u].por.trim()})</div>`:segH('u',[{v:'kg',l:'Peso'},{v:'l',l:'Volumen'},{v:'m',l:'Largo'},{v:'u',l:'Unidades'}],x.u)}
         <div class="fl">Estado</div>${segH('estado',[{v:'ok',l:'Tengo'},{v:'pronto',l:'Reponer pronto'},{v:'ya',l:'Necesito ya'}],x.estado)}
         <label class="f">Lo compro cada (días, opcional)<input id="pd-c" inputmode="numeric" value="${esc(x.cada||'')}" placeholder="Ej: 21"></label>
         <div class="hint" style="margin-top:6px">Si lo completás, te lo marco como “se está terminando” unos días antes, así llegás a comparar precios con tiempo.</div>
@@ -1541,7 +1544,7 @@ function sheetCompra(nid){
       }
       else if(k==='tog')x.rows[v].on=!x.rows[v].on;
       else if(k==='add')addRow(v,true);
-      else if(k==='cont'){const p=prodOf(v),r=x.rows[v];const t=prompt('Contenido de cada uno (por ejemplo: 500 g, 1,5 l, 6 u)',r.cont?fmtCont(r.cont,p.u):'');if(t===null)return;const c=parseContTxt(t,p.u);if(c>0)r.cont=c;else{toast('No entendí el contenido');return}}
+      else if(k==='cont'){const p=prodOf(v),r=x.rows[v];const t=prompt('Contenido de cada uno (por ejemplo: 500 g, 1,5 l, 120 m, 6 u)',r.cont?fmtCont(r.cont,p.u):'');if(t===null)return;const c=parseContTxt(t,p.u);if(c>0)r.cont=c;else{toast('No entendí el contenido');return}}
       else if(k==='go'){
         if(!x.n){toast('Elegí el negocio');return}
         const ls=Object.keys(x.rows).map(line).filter(l=>l.r.on&&l.pr>0);
